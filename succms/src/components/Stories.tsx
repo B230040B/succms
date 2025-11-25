@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Button } from "./ui/button";
 import { Progress } from "./ui/progress";
@@ -199,6 +199,32 @@ export function Stories({ currentUserRole = "student" }: StoriesProps) {
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [storyUsers, setStoryUsers] = useState<StoryUser[]>(mockStoryUsers);
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
+
+  // Auto-progress story when progress bar completes
+  useEffect(() => {
+    if (!selectedUser) return;
+
+    const timer = setTimeout(() => {
+      if (currentStoryIndex < selectedUser.stories.length - 1) {
+        setCurrentStoryIndex(prev => prev + 1);
+      } else {
+        const currentUserIndex = storyUsers.findIndex(u => u.id === selectedUser.id);
+        const nextUnviewedUser = storyUsers
+          .slice(currentUserIndex + 1)
+          .find(u => u.hasActiveStories && u.id !== 0);
+        
+        if (nextUnviewedUser) {
+          setSelectedUser(nextUnviewedUser);
+          setCurrentStoryIndex(0);
+        } else {
+          // No more stories, close viewer
+          closeStoryViewer();
+        }
+      }
+    }, 5000); // 5 seconds matches the progress animation duration
+
+    return () => clearTimeout(timer);
+  }, [selectedUser, currentStoryIndex, storyUsers]);
 
   const handleStoryClick = (user: StoryUser) => {
     if (user.id === 0) {
@@ -432,7 +458,7 @@ export function Stories({ currentUserRole = "student" }: StoriesProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 relative z-40">
                   {/* Report Button */}
                   <AlertDialog open={reportDialogOpen} onOpenChange={setReportDialogOpen}>
                     <AlertDialogTrigger asChild>
@@ -464,7 +490,8 @@ export function Stories({ currentUserRole = "student" }: StoriesProps) {
                     variant="ghost"
                     size="sm"
                     onClick={closeStoryViewer}
-                    className="text-white hover:bg-white/20"
+                    aria-label="Close story"
+                    className="text-white hover:bg-white/20 relative z-50"
                   >
                     <X className="h-6 w-6" />
                   </Button>
@@ -480,7 +507,7 @@ export function Stories({ currentUserRole = "student" }: StoriesProps) {
             />
             <button
               onClick={nextStory}
-              className="absolute right-0 top-0 bottom-0 w-1/3 z-20 cursor-pointer"
+              className="absolute right-0 top-0 bottom-0 w-2/5 z-20 cursor-pointer"
               aria-label="Next story"
             />
 

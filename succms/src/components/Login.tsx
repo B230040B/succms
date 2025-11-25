@@ -133,7 +133,7 @@ export function Login({ onLogin }: LoginProps) {
             backgroundImage: 'url(/loginBackground.jpg)',
             backgroundSize: 'cover',
             backgroundPosition: 'center',
-            opacity: 0.7,
+            opacity: 0.9,
             pointerEvents: 'none',
           }}
         />
@@ -225,11 +225,11 @@ export function Login({ onLogin }: LoginProps) {
       <div
         className="absolute inset-0 z-0"
         style={{
-          backgroundImage: 'url(/loginBackground.jpg)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.4,
-          pointerEvents: 'none',
+            backgroundImage: 'url(/loginBackground.jpg)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            opacity: 0.9,
+            pointerEvents: 'none',
         }}
       />
       {/* Overlay for gradient (optional, can remove if not needed) */}

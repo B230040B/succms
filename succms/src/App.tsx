@@ -257,7 +257,17 @@ export default function App() {
             {/* Header */}
             <div className="p-6 border-b border-sidebar-border">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    // navigate to the default home/dashboard for the current role
+                    setCurrentPage('dashboard');
+                    setSidebarOpen(false);
+                  }}
+                  className="flex items-center gap-3 cursor-pointer"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setCurrentPage('dashboard'); setSidebarOpen(false); } }}
+                >
                   <div className="w-28 sm:w-32 h-10 rounded-md flex-shrink-0 flex items-center justify-center p-1 bg-white border border-gray-200 shadow-md">
                     <img src="/suclogo.png" alt="SUC logo" className="h-full w-auto object-contain brightness-125 saturate-150 contrast-125 drop-shadow-lg" />
                   </div>
@@ -442,11 +452,21 @@ export default function App() {
                   <span>{userData?.id}</span>
                 </div>
                 
-                <Avatar className="h-8 w-8">
+                <button
+                  onClick={() => {
+                    if (userRole === 'student') setCurrentStudentPage('profile');
+                    else if (userRole === 'lecturer') setCurrentLecturerPage('profile');
+                    else setCurrentAdminPage('profile');
+                  }}
+                  className="rounded-full focus:outline-none"
+                  aria-label="Open profile"
+                >
+                  <Avatar className="h-8 w-8">
                   <AvatarFallback>
                     {userData?.name?.split(' ').map((n: string) => n[0]).join('') || 'U'}
                   </AvatarFallback>
                 </Avatar>
+                </button>
               </div>
             </div>
           </header>
