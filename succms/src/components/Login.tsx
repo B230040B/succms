@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useAuth } from "../contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -21,22 +22,24 @@ import {
   Shield
 } from "lucide-react";
 
-interface LoginProps {
-  onLogin: (role: 'student' | 'lecturer' | 'admin', userData: any) => void;
-}
-
-export function Login({ onLogin }: LoginProps) {
+export function Login() {
+  const { signIn, signUp } = useAuth();
   const [selectedRole, setSelectedRole] = useState<'student' | 'lecturer' | 'admin' | null>(null);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
+    username: "",
     email: "",
     password: "",
+    confirmPassword: "",
+    // fullName removed; we'll store username in the profile's full_name field for now
     studentId: "",
     staffId: "",
     adminId: ""
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
 
   const roles = [
     {
@@ -72,46 +75,78 @@ export function Login({ onLogin }: LoginProps) {
       return;
     }
     setError("");
-    if (!formData.email || !formData.password) {
-      setError("Please fill in all required fields");
-      return;
+
+    if (authMode === 'signup') {
+      if (!formData.username || !formData.email || !formData.password || !formData.confirmPassword) {
+        setError("Please fill in all required fields");
+        return;
+      }
+      if (formData.password !== formData.confirmPassword) {
+        setError("Passwords do not match");
+        return;
+      }
+      if (formData.password.length < 6) {
+        setError("Password must be at least 6 characters");
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        // Pass the chosen username as the profile full_name metadata so the existing trigger stores it.
+        const res = await signUp(formData.email, formData.password, formData.username, selectedRole);
+        // supabase returns { data, error }
+        const sError = (res as any).error;
+        const data = (res as any).data;
+        if (sError) {
+          setError(sError.message || "Sign up failed");
+        } else {
+          // If a session/user is not returned, email confirmation may be required
+          if (!data?.user && !data?.session) {
+            setInfo(`Account created. A confirmation email was sent to ${formData.email}. Please confirm your email before signing in.`);
+          } else {
+            setInfo("Account created. You are signed in.");
+          }
+        }
+      } catch (err: any) {
+        setError(err.message || "An error occurred during sign up");
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      if (!formData.username || !formData.password) {
+        setError("Please fill in all required fields");
+        return;
+      }
+
+      setIsLoading(true);
+      try {
+        const res = await signIn(formData.username, formData.password, selectedRole);
+        const sError = (res as any).error;
+        const data = (res as any).data;
+        if (sError) {
+          const msg = sError.message || "Sign in failed";
+          setError(msg);
+        } else if (!data?.session && !data?.user) {
+          // No session means likely needs confirmation
+          setError("Unable to sign in. If you recently signed up, please confirm your email address.");
+        }
+      } catch (err: any) {
+        setError(err.message || "An error occurred during sign in");
+      } finally {
+        setIsLoading(false);
+      }
     }
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
-      const userData = selectedRole === 'student' 
-        ? { 
-            name: 'Alex Johnson', 
-            id: formData.studentId || 'STU2024001', 
-            year: '3rd Year',
-            program: 'Computer Science',
-            email: formData.email
-          }
-        : selectedRole === 'lecturer'
-        ? { 
-            name: 'Dr. Sarah Chen', 
-            id: formData.staffId || 'LEC2024001', 
-            department: 'Computer Science',
-            title: 'Associate Professor',
-            email: formData.email
-          }
-        : { 
-            name: 'Mr. John Doe', 
-            id: formData.adminId || 'ADM2024001', 
-            department: 'IT Services',
-            title: 'System Administrator',
-            email: formData.email
-          };
-      onLogin(selectedRole, userData);
-    }, 1500);
   };
 
-  const handleDemoLogin = (role: 'student' | 'lecturer' | 'admin') => {
+  const handleDemoLogin = async (role: 'student' | 'lecturer' | 'admin') => {
     const roleData = roles.find(r => r.id === role)!;
     setSelectedRole(role);
+    setAuthMode('signin');
     setFormData({
+      username: roleData.demoCredentials.email.split('@')[0],
       email: roleData.demoCredentials.email,
       password: roleData.demoCredentials.password,
+      confirmPassword: "",
       studentId: role === 'student' ? roleData.demoCredentials.id : '',
       staffId: role === 'lecturer' ? roleData.demoCredentials.id : '',
       adminId: role === 'admin' ? roleData.demoCredentials.id : ''
@@ -121,6 +156,22 @@ export function Login({ onLogin }: LoginProps) {
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     if (error) setError("");
+    if (info) setInfo("");
+  };
+
+  const toggleAuthMode = () => {
+    setAuthMode(authMode === 'signin' ? 'signup' : 'signin');
+    setError("");
+    setInfo("");
+    setFormData({
+      username: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      studentId: "",
+      staffId: "",
+      adminId: ""
+    });
   };
 
   if (!selectedRole) {
@@ -187,9 +238,12 @@ export function Login({ onLogin }: LoginProps) {
                       </div>
 
                       <div className="space-y-3">
-                        <Button className="w-full" onClick={() => setSelectedRole(role.id)}>
-                          Continue as {role.title}
+                        <Button className="w-full" onClick={() => { setSelectedRole(role.id); setAuthMode('signin'); }}>
+                          Sign In as {role.title}
                           <ArrowRight className="h-4 w-4 ml-2" />
+                        </Button>
+                        <Button className="w-full" variant="secondary" onClick={() => { setSelectedRole(role.id); setAuthMode('signup'); }}>
+                          Create {role.title} Account
                         </Button>
                         <Button 
                           variant="outline" 
@@ -241,7 +295,7 @@ export function Login({ onLogin }: LoginProps) {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setSelectedRole(null)}
+              onClick={() => { setSelectedRole(null); setAuthMode('signin'); }}
               className="self-start"
             >
               ← Back
@@ -252,8 +306,8 @@ export function Login({ onLogin }: LoginProps) {
                 <Icon className="h-6 w-6 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-2xl">Sign in as {currentRole.title}</CardTitle>
-                <p className="text-muted-foreground">Enter your credentials to continue</p>
+                <CardTitle className="text-2xl">{authMode === 'signin' ? 'Sign In' : 'Create Account'} as {currentRole.title}</CardTitle>
+                <p className="text-muted-foreground">{authMode === 'signin' ? 'Enter your credentials to continue' : 'Fill in the form to create your account'}</p>
               </div>
             </div>
           </CardHeader>
@@ -266,59 +320,64 @@ export function Login({ onLogin }: LoginProps) {
                 </AlertDescription>
               </Alert>
             )}
+            {info && (
+              <Alert className="border-green-200 bg-green-50">
+                <AlertDescription className="text-green-700">
+                  {info}
+                </AlertDescription>
+              </Alert>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              {authMode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="username">Username</Label>
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder={selectedRole === 'student' ? 'student@university.edu' : 'lecturer@university.edu'}
-                    className="pl-10"
-                    value={formData.email}
-                    onChange={(e) => handleInputChange("email", e.target.value)}
+                    id="username"
+                    type="text"
+                    placeholder="Choose a username (unique)"
+                    value={formData.username}
+                    onChange={(e) => handleInputChange("username", e.target.value)}
                     required
                   />
                 </div>
+              )}
+
+              <div className="space-y-2">
+                {authMode === 'signin' ? (
+                  <>
+                    <Label htmlFor="username">Username</Label>
+                    <div className="relative">
+                      <Users className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="username"
+                        type="text"
+                        placeholder="your.username"
+                        className="pl-10"
+                        value={formData.username}
+                        onChange={(e) => handleInputChange("username", e.target.value)}
+                        required
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Label htmlFor="email">Email (for verification)</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="you@university.edu"
+                        className="pl-10"
+                        value={formData.email}
+                        onChange={(e) => handleInputChange("email", e.target.value)}
+                        required
+                      />
+                    </div>
+                  </>
+                )}
               </div>
-
-              {selectedRole === 'student' && (
-                <div className="space-y-2">
-                  <Label htmlFor="studentId">Student ID</Label>
-                  <Input
-                    id="studentId"
-                    placeholder="STU2024001"
-                    value={formData.studentId}
-                    onChange={(e) => handleInputChange("studentId", e.target.value)}
-                  />
-                </div>
-              )}
-
-              {selectedRole === 'lecturer' && (
-                <div className="space-y-2">
-                  <Label htmlFor="staffId">Staff ID</Label>
-                  <Input
-                    id="staffId"
-                    placeholder="LEC2024001"
-                    value={formData.staffId}
-                    onChange={(e) => handleInputChange("staffId", e.target.value)}
-                  />
-                </div>
-              )}
-
-              {selectedRole === 'admin' && (
-                <div className="space-y-2">
-                  <Label htmlFor="adminId">Admin ID</Label>
-                  <Input
-                    id="adminId"
-                    placeholder="ADM2024001"
-                    value={formData.adminId}
-                    onChange={(e) => handleInputChange("adminId", e.target.value)}
-                  />
-                </div>
-              )}
 
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -343,6 +402,24 @@ export function Login({ onLogin }: LoginProps) {
                 </div>
               </div>
 
+              {authMode === 'signup' && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      className="pl-10 pr-10"
+                      value={formData.confirmPassword}
+                      onChange={(e) => handleInputChange("confirmPassword", e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+
               <Button 
                 type="submit" 
                 className="w-full" 
@@ -351,21 +428,31 @@ export function Login({ onLogin }: LoginProps) {
                 {isLoading ? (
                   <div className="flex items-center gap-2">
                     <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                    Signing In...
+                    {authMode === 'signin' ? 'Signing In...' : 'Creating Account...'}
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    Sign In
+                    {authMode === 'signin' ? 'Sign In' : 'Create Account'}
                     <ArrowRight className="h-4 w-4" />
                   </div>
                 )}
               </Button>
             </form>
 
-            <div className="text-center">
-              <button className="text-sm text-muted-foreground hover:text-primary hover:underline">
-                Forgot your password?
-              </button>
+            <div className="text-center space-y-2">
+              {authMode === 'signin' && (
+                <button className="text-sm text-muted-foreground hover:text-primary hover:underline">
+                  Forgot your password?
+                </button>
+              )}
+              <div className="pt-2 border-t">
+                <button 
+                  onClick={toggleAuthMode}
+                  className="text-sm text-muted-foreground hover:text-primary hover:underline"
+                >
+                  {authMode === 'signin' ? 'Need an account? Sign Up' : 'Already have an account? Sign In'}
+                </button>
+              </div>
             </div>
           </CardContent>
         </Card>

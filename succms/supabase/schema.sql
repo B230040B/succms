@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- User profiles table (extends Supabase auth.users)
 CREATE TABLE IF NOT EXISTS public.user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT NOT NULL,
   full_name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('student', 'lecturer', 'admin')),
   program_or_department TEXT, -- e.g., "Computer Science" or "Faculty of Engineering"

@@ -23,7 +23,7 @@ import {
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 
 interface UserProfileProps {
-  userId: number;
+  userId: string | number;
   userRole: "student" | "lecturer" | "admin";
   isOwnProfile?: boolean;
   currentUserRole?: "student" | "lecturer" | "admin";
