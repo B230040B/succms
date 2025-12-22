@@ -9,8 +9,8 @@ export type UserProfile = {
   username: string;
   email: string;
   role: 'student' | 'lecturer' | 'admin';
-  faculty?: string;   // New field for Course Filtering
-  programme?: string; // New field for Course Filtering
+  faculty?: string;   // New field
+  programme?: string; // New field
 };
 
 interface AuthContextType {
@@ -21,9 +21,8 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<any>;
   signUp: (email: string, password: string, username: string, fullName: string, role: 'student' | 'lecturer' | 'admin') => Promise<any>;
   signOut: () => Promise<any>;
-  // This is the missing part causing your error:
-  updateProfile: (updates: Partial<UserProfile>) => Promise<any>; 
-  refreshProfile: () => Promise<void>; 
+  updateProfile: (updates: Partial<UserProfile>) => Promise<any>; // New Function
+  refreshProfile: () => Promise<void>; // New Function
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -85,6 +84,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signUp = async (email: string, password: string, username: string, fullName: string, role: 'student' | 'lecturer' | 'admin') => {
     try {
+      // 1. Check if username exists
       const { data: existingUser } = await supabase
         .from('user_profiles')
         .select('username')
@@ -95,6 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         return { data: null, error: { message: "Username already taken" } };
       }
 
+      // 2. Sign Up
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -116,8 +117,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     await supabase.auth.signOut();
   };
 
-  // --- NEW FUNCTIONS ---
-
   // Allow components to update the profile (e.g., setting Faculty)
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) return { error: "No user" };
@@ -133,6 +132,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     return { data, error };
   };
 
+  // Helper to re-fetch data manually if needed
   const refreshProfile = async () => {
     if (session) await loadUserAndProfile(session);
   };

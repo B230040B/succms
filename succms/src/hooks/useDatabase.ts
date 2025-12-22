@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '/workspaces/succms/succms/src/lib/supabase.ts';
+import { useAuth } from '/workspaces/succms/succms/src/contexts/AuthContext.tsx';
 
 // Hook to fetch courses for a user
 export function useCourses(userId?: string) {

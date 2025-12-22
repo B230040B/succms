@@ -13,7 +13,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE IF NOT EXISTS public.user_profiles (
   id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
-  full_name TEXT NOT NULL,
+  full_name TEXT NOT NULL UNIQUE, -- Username must be unique for login
   role TEXT NOT NULL CHECK (role IN ('student', 'lecturer', 'admin')),
   program_or_department TEXT, -- e.g., "Computer Science" or "Faculty of Engineering"
   avatar_url TEXT,
@@ -306,10 +306,16 @@ ALTER TABLE public.announcement_reads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leaderboard ENABLE ROW LEVEL SECURITY;
 
 -- USER_PROFILES RLS Policies
--- Users can view all profiles
-CREATE POLICY "Allow all authenticated users to view user profiles"
+
+-- Unauthenticated users can read profiles (needed for login lookup)
+CREATE POLICY "Allow unauthenticated users to lookup profiles for login"
   ON public.user_profiles FOR SELECT
-  USING (auth.role() = 'authenticated');
+  USING (true);
+
+-- Service role can insert profiles (for trigger on auth user creation)
+CREATE POLICY "Allow service role to insert profiles"
+  ON public.user_profiles FOR INSERT
+  WITH CHECK (true);
 
 -- Users can update their own profile
 CREATE POLICY "Allow users to update their own profile"

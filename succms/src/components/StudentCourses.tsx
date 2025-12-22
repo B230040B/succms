@@ -1,379 +1,507 @@
-import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import React, { useState, useEffect } from "react";
+import { useAuth } from "/workspaces/succms/succms/src/contexts/AuthContext.tsx";
+import { supabase } from "/workspaces/succms/succms/src/lib/supabase.ts";
+import { CoursePage } from "./CoursePage"; // <--- IMPORT THIS
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
-import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Avatar, AvatarFallback } from "./ui/avatar";
-import { 
-  Search, 
-  Filter, 
-  BookOpen, 
-  Clock, 
-  Users, 
-  Star,
-  Calendar,
-  GraduationCap,
-  CheckCircle,
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "./ui/dialog";
+import {
+  Search,
+  BookOpen,
+  Clock,
+  Users,
   Plus,
-  Eye
+  Loader2,
+  AlertCircle,
+  Key,
+  GraduationCap,
+  ChevronLeft,
+  ChevronRight,
+  Send,
+  ArrowRightCircle
 } from "lucide-react";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Label } from "./ui/label";
+
+// --- Types ---
+interface Course {
+  id: string;
+  course_code: string;
+  name: string;
+  chinese_name: string | null;
+  faculty: string;
+  programme: string;
+  course_type: "common_core" | "discipline_core" | "elective_open" | "elective_core";
+  credit_hours: number;
+  max_capacity: number;
+  enrollment_key: string | null;
+  status: "active" | "unavailable" | "full" | "open";
+  semester: string;
+}
 
 export function StudentCourses() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+  const { profile, updateProfile } = useAuth();
+  
+  // Data State
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [programmeOptions, setProgrammeOptions] = useState<{faculty: string, programme: string}[]>([]);
+  
+  // UI State
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("my-courses");
+  const [viewingCourseId, setViewingCourseId] = useState<string | null>(null); // <--- NEW STATE FOR NAVIGATION
+  
+  // Pagination State
+  const ITEMS_PER_PAGE = 9;
+  const [currentPage, setCurrentPage] = useState(1);
+  
+  // Enrollment State
+  const [selectedCourseForEnrollment, setSelectedCourseForEnrollment] = useState<Course | null>(null);
+  const [enrollmentKeyInput, setEnrollmentKeyInput] = useState("");
+  const [enrollmentError, setEnrollmentError] = useState("");
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [isRequestingKey, setIsRequestingKey] = useState(false);
+  const [keyRequestSent, setKeyRequestSent] = useState(false);
 
-  const enrolledCourses = [
-    {
-      id: 1,
-      code: "CS301",
-      name: "Database Systems",
-      lecturer: "Dr. Sarah Chen",
-      department: "Computer Science",
-      credits: 3,
-      semester: "Spring 2024",
-      progress: 75,
-      nextClass: "Today, 2:00 PM",
-      room: "Lab 204",
-      grade: "A-",
-      status: "active"
-    },
-    {
-      id: 2,
-      code: "CS205",
-      name: "Data Structures & Algorithms",
-      lecturer: "Prof. Michael Roberts",
-      department: "Computer Science",
-      credits: 4,
-      semester: "Spring 2024",
-      progress: 60,
-      nextClass: "Tomorrow, 10:00 AM",
-      room: "Room 301",
-      grade: "B+",
-      status: "active"
-    },
-    {
-      id: 3,
-      code: "CS410",
-      name: "Software Engineering",
-      lecturer: "Dr. Elena Rodriguez",
-      department: "Computer Science",
-      credits: 4,
-      semester: "Spring 2024",
-      progress: 45,
-      nextClass: "Wed, 9:00 AM",
-      room: "Room 105",
-      grade: "B",
-      status: "active"
+  // Profile Setup State
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [programmeSearch, setProgrammeSearch] = useState("");
+  const [selectedProgrammeObj, setSelectedProgrammeObj] = useState<{faculty: string, programme: string} | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // --- 1. Initial Load & Checks ---
+  useEffect(() => {
+    if (!profile) return;
+    if (!profile.faculty || !profile.programme) {
+      setShowProfileSetup(true);
+      fetchProgrammeOptions();
+    } else {
+      fetchData();
     }
-  ];
+  }, [profile]);
 
-  const availableCourses = [
-    {
-      id: 4,
-      code: "CS350",
-      name: "Machine Learning Fundamentals",
-      lecturer: "Dr. Ahmad Hassan",
-      department: "Computer Science",
-      credits: 3,
-      semester: "Spring 2024",
-      enrolledStudents: 28,
-      maxStudents: 35,
-      rating: 4.8,
-      difficulty: "Advanced",
-      prerequisites: ["CS205", "MATH201"],
-      description: "Introduction to machine learning algorithms, neural networks, and data analysis techniques.",
-      schedule: "Mon/Wed/Fri 11:00 AM",
-      room: "Lab 401"
-    },
-    {
-      id: 5,
-      code: "CS320",
-      name: "Web Development",
-      lecturer: "Prof. Lisa Wang",
-      department: "Computer Science",
-      credits: 3,
-      semester: "Spring 2024",
-      enrolledStudents: 45,
-      maxStudents: 50,
-      rating: 4.6,
-      difficulty: "Intermediate",
-      prerequisites: ["CS101"],
-      description: "Full-stack web development using modern frameworks and technologies.",
-      schedule: "Tue/Thu 2:00 PM",
-      room: "Lab 302"
-    },
-    {
-      id: 6,
-      code: "MATH301",
-      name: "Linear Algebra",
-      lecturer: "Dr. Robert Chen",
-      department: "Mathematics",
-      credits: 4,
-      semester: "Spring 2024",
-      enrolledStudents: 32,
-      maxStudents: 40,
-      rating: 4.4,
-      difficulty: "Intermediate",
-      prerequisites: ["MATH201"],
-      description: "Vector spaces, linear transformations, eigenvalues, and applications.",
-      schedule: "Mon/Wed/Fri 9:00 AM",
-      room: "Room 201"
-    },
-    {
-      id: 7,
-      code: "CS450",
-      name: "Computer Graphics",
-      lecturer: "Dr. Maria Lopez",
-      department: "Computer Science",
-      credits: 3,
-      semester: "Spring 2024",
-      enrolledStudents: 22,
-      maxStudents: 30,
-      rating: 4.7,
-      difficulty: "Advanced",
-      prerequisites: ["CS301", "MATH301"],
-      description: "3D graphics programming, rendering techniques, and computer animation.",
-      schedule: "Tue/Thu 10:00 AM",
-      room: "Lab 501"
-    }
-  ];
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
 
-  const categories = [
-    { id: "all", name: "All Courses", count: availableCourses.length },
-    { id: "cs", name: "Computer Science", count: availableCourses.filter(c => c.department === "Computer Science").length },
-    { id: "math", name: "Mathematics", count: availableCourses.filter(c => c.department === "Mathematics").length },
-    { id: "engineering", name: "Engineering", count: 0 },
-    { id: "business", name: "Business", count: 0 }
-  ];
+  // --- 2. Data Fetching ---
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case 'Beginner': return 'bg-green-100 text-green-800';
-      case 'Intermediate': return 'bg-yellow-100 text-yellow-800';
-      case 'Advanced': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+  const fetchProgrammeOptions = async () => {
+    const { data } = await supabase.from('courses').select('faculty, programme');
+    if (data) {
+      const unique = data.filter((v, i, a) => a.findIndex(t => (t.programme === v.programme)) === i);
+      setProgrammeOptions(unique);
     }
   };
 
-  const getGradeColor = (grade: string) => {
-    if (grade.startsWith('A')) return 'text-green-600 bg-green-50';
-    if (grade.startsWith('B')) return 'text-blue-600 bg-blue-50';
-    if (grade.startsWith('C')) return 'text-yellow-600 bg-yellow-50';
-    return 'text-gray-600 bg-gray-50';
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      // A. Fetch Enrolled
+      const { data: enrollmentData } = await supabase
+        .from('enrollments')
+        .select(`course_id, courses (*)`)
+        .eq('user_id', profile?.id);
+      
+      const myCourses = enrollmentData?.map((e: any) => e.courses) || [];
+      setEnrolledCourses(myCourses);
+
+      // B. Fetch Available
+      const { data: allCourses } = await supabase
+        .from('courses')
+        .select('*')
+        .neq('status', 'unavailable');
+
+      if (allCourses && profile) {
+        const enrolledIds = new Set(myCourses.map(c => c.id));
+        
+        const filtered = allCourses.filter((course: Course) => {
+          if (enrolledIds.has(course.id)) return false; 
+          
+          const isCommonCore = course.course_type === 'common_core' && course.faculty === profile.faculty;
+          const isDisciplineCore = course.course_type === 'discipline_core' && course.programme === profile.programme;
+          const isElectiveOpen = course.course_type === 'elective_open';
+          const isElectiveCore = course.course_type === 'elective_core' && course.faculty === profile.faculty;
+
+          return isCommonCore || isDisciplineCore || isElectiveOpen || isElectiveCore;
+        });
+
+        setAvailableCourses(filtered);
+      }
+    } catch (error) {
+      console.error("Error fetching courses", error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const filteredCourses = availableCourses.filter(course => {
-    const matchesSearch = course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         course.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         course.lecturer.toLowerCase().includes(searchQuery.toLowerCase());
+  // --- 3. Actions ---
+
+  const handleProfileSave = async () => {
+    if (!selectedProgrammeObj) return;
+    setIsSavingProfile(true);
     
-    const matchesCategory = selectedCategory === "all" || 
-                           (selectedCategory === "cs" && course.department === "Computer Science") ||
-                           (selectedCategory === "math" && course.department === "Mathematics");
+    const { error } = await updateProfile({
+      faculty: selectedProgrammeObj.faculty,
+      programme: selectedProgrammeObj.programme
+    });
+
+    if (!error) {
+      setShowProfileSetup(false);
+      fetchData();
+    }
+    setIsSavingProfile(false);
+  };
+
+  const handleEnrollClick = (course: Course) => {
+    setEnrollmentError("");
+    setEnrollmentKeyInput("");
+    setKeyRequestSent(false);
+    setSelectedCourseForEnrollment(course);
+  };
+
+  const handleRequestKey = async () => {
+    if (!selectedCourseForEnrollment || !profile) return;
+    setIsRequestingKey(true);
     
-    return matchesSearch && matchesCategory;
-  });
+    const { error } = await supabase.from('key_requests').insert({
+        user_id: profile.id,
+        course_id: selectedCourseForEnrollment.id,
+        status: 'pending'
+    });
+
+    if (error) {
+        setEnrollmentError("Failed to send request. You may have already requested this.");
+    } else {
+        setKeyRequestSent(true);
+    }
+    setIsRequestingKey(false);
+  };
+
+  const handleEnrollSubmit = async () => {
+    if (!selectedCourseForEnrollment || !profile) return;
+    setIsEnrolling(true);
+    setEnrollmentError("");
+
+    try {
+      const inputKey = enrollmentKeyInput.trim();
+      const actualKey = selectedCourseForEnrollment.enrollment_key?.trim();
+
+      if (!actualKey) throw new Error("System Error: Course has no key set. Contact Admin.");
+      if (inputKey !== actualKey) throw new Error("Invalid Enrollment Key.");
+
+      const { error } = await supabase.from('enrollments').insert({
+        user_id: profile.id,
+        course_id: selectedCourseForEnrollment.id
+      });
+
+      if (error) {
+        if (error.code === '23505') throw new Error("Already enrolled.");
+        throw error;
+      }
+
+      setSelectedCourseForEnrollment(null);
+      setActiveTab("my-courses");
+      fetchData(); 
+      
+    } catch (error: any) {
+      setEnrollmentError(error.message || "Failed to enroll");
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  // --- 4. Render Logic ---
+
+  // *** IF VIEWING A COURSE, SHOW THE TEAMS VIEW ***
+  if (viewingCourseId) {
+    return <CoursePage courseId={viewingCourseId} onBack={() => setViewingCourseId(null)} />;
+  }
+
+  const displayedAvailable = availableCourses.filter(c => 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.course_code.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(displayedAvailable.length / ITEMS_PER_PAGE);
+  const paginatedCourses = displayedAvailable.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE, 
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const filteredProgrammes = programmeOptions.filter(p => 
+    p.programme.toLowerCase().includes(programmeSearch.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1>My Courses</h1>
-        <p className="text-muted-foreground">Manage your enrolled courses and discover new ones</p>
+        <h1 className="text-2xl font-bold tracking-tight">My Studies</h1>
+        <p className="text-muted-foreground">
+          {profile?.programme || "Manage your courses"}
+        </p>
       </div>
 
-      <Tabs defaultValue="enrolled">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="enrolled">Enrolled Courses ({enrolledCourses.length})</TabsTrigger>
-          <TabsTrigger value="browse">Browse Courses</TabsTrigger>
+          <TabsTrigger value="my-courses" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Enrolled
+            <Badge variant="secondary" className="ml-1">{enrolledCourses.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="browse" className="gap-2">
+            <Search className="h-4 w-4" />
+            Browse Available
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="enrolled" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {enrolledCourses.map((course) => (
-              <Card key={course.id} className="hover:shadow-md transition-shadow">
-                <CardHeader className="space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <Badge variant="outline" className="mb-2">{course.code}</Badge>
-                      <CardTitle className="text-lg leading-tight">{course.name}</CardTitle>
+        {/* --- TAB: MY COURSES --- */}
+        <TabsContent value="my-courses" className="space-y-4">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" /></div>
+          ) : enrolledCourses.length === 0 ? (
+            <div className="text-center py-12 border rounded-lg bg-muted/20 border-dashed">
+              <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium">No courses yet</h3>
+              <p className="text-muted-foreground mb-4">Start your semester by enrolling in courses.</p>
+              <Button onClick={() => setActiveTab("browse")}>Browse Courses</Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {enrolledCourses.map(course => (
+                <Card 
+                    key={course.id} 
+                    className="hover:shadow-md transition-all border-l-4 border-l-green-500 cursor-pointer"
+                    onClick={() => setViewingCourseId(course.id)} // Click card to open
+                >
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <Badge variant="outline">{course.course_code}</Badge>
+                      <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-none">Enrolled</Badge>
                     </div>
-                    <Badge className={getGradeColor(course.grade)}>
-                      {course.grade}
+                    <CardTitle className="mt-2 line-clamp-1">{course.name}</CardTitle>
+                    <CardDescription className="line-clamp-1">{course.chinese_name}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                     <div className="text-xs text-muted-foreground space-y-2 mb-4">
+                        <div className="flex items-center gap-2">
+                           <Clock className="h-3 w-3" /> {course.credit_hours} Credits
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <Users className="h-3 w-3" /> {course.faculty}
+                        </div>
+                     </div>
+                     <Button className="w-full" onClick={(e: React.MouseEvent) => {
+                         e.stopPropagation(); // Prevent double triggering
+                         setViewingCourseId(course.id);
+                     }}>
+                        Go to Course <ArrowRightCircle className="ml-2 h-4 w-4" />
+                     </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* --- TAB: BROWSE (With Pagination) --- */}
+        <TabsContent value="browse" className="space-y-6">
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search by name or code..." 
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[400px]">
+            {paginatedCourses.map(course => (
+              <Card key={course.id} className="flex flex-col hover:border-primary/50 transition-colors">
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <Badge variant="outline">{course.course_code}</Badge>
+                    <Badge variant={course.course_type === 'common_core' ? 'secondary' : 'outline'}>
+                      {course.course_type?.replace('_', ' ')}
                     </Badge>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-sm text-muted-foreground">by {course.lecturer}</p>
-                    <p className="text-sm text-muted-foreground">{course.credits} credits • {course.semester}</p>
-                  </div>
+                  <CardTitle className="mt-2 text-lg line-clamp-1" title={course.name}>{course.name}</CardTitle>
+                  <CardDescription className="font-noto-sans-sc line-clamp-1">{course.chinese_name}</CardDescription>
                 </CardHeader>
-                
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Progress</span>
-                      <span>{course.progress}%</span>
-                    </div>
-                    <Progress value={course.progress} />
-                  </div>
-
-                  <div className="space-y-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span>{course.nextClass}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span>{course.room}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button className="flex-1">
-                      <BookOpen className="h-4 w-4 mr-2" />
-                      Continue
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                  </div>
+                <CardContent className="mt-auto">
+                   <div className="flex justify-between items-center text-sm text-muted-foreground mb-4">
+                      <span>{course.semester}</span>
+                      <span>{course.credit_hours} Credits</span>
+                   </div>
+                   <Button className="w-full" onClick={() => handleEnrollClick(course)}>
+                      <Plus className="h-4 w-4 mr-2" /> Enroll
+                   </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
-        </TabsContent>
 
-        <TabsContent value="browse" className="space-y-6">
-          {/* Search and Filter */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search courses, instructors..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
-            <Button variant="outline" className="flex items-center gap-2">
-              <Filter className="h-4 w-4" />
-              Filters
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* --- DIALOG: PROFILE SETUP --- */}
+      <Dialog open={showProfileSetup} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" onInteractOutside={(e: any) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Welcome! Select your Programme</DialogTitle>
+            <DialogDescription>
+              Please search and select your current study programme to continue.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder="Search programmes..." 
+                    className="pl-8"
+                    value={programmeSearch}
+                    onChange={(e) => setProgrammeSearch(e.target.value)}
+                />
+            </div>
+            
+            <div className="border rounded-md h-[200px] overflow-y-auto p-1 bg-muted/10">
+                {filteredProgrammes.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                        No programmes found.
+                    </div>
+                ) : (
+                    filteredProgrammes.map((opt, idx) => (
+                        <button
+                            key={idx}
+                            onClick={() => setSelectedProgrammeObj(opt)}
+                            className={`w-full text-left px-3 py-2 text-sm rounded-sm transition-colors ${
+                                selectedProgrammeObj?.programme === opt.programme 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'hover:bg-accent'
+                            }`}
+                        >
+                            {opt.programme}
+                        </button>
+                    ))
+                )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleProfileSave} disabled={!selectedProgrammeObj || isSavingProfile}>
+              {isSavingProfile && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+              Confirm Selection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG: ENROLLMENT KEY --- */}
+      <Dialog 
+        open={!!selectedCourseForEnrollment} 
+        onOpenChange={(open: boolean) => !open && setSelectedCourseForEnrollment(null)}
+      >
+        <DialogContent className="max-w-sm sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enrollment Key Required</DialogTitle>
+            <DialogDescription>
+              To join <b>{selectedCourseForEnrollment?.name}</b>, enter the key provided by your lecturer.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {enrollmentError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{enrollmentError}</AlertDescription>
+              </Alert>
+            )}
+
+            {keyRequestSent && (
+                <Alert className="bg-green-50 text-green-800 border-green-200">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>Request sent! Admin will review shortly.</AlertDescription>
+                </Alert>
+            )}
+            
+            <div className="space-y-2">
+              <Label>Enrollment Key</Label>
+              <div className="relative">
+                <Key className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="e.g. AbC123Xy" 
+                  className="pl-9 font-mono"
+                  value={enrollmentKeyInput}
+                  onChange={(e) => setEnrollmentKeyInput(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or</span></div>
+            </div>
+
+            <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={handleRequestKey}
+                disabled={isRequestingKey || keyRequestSent}
+            >
+                {isRequestingKey ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Send className="mr-2 h-4 w-4" />}
+                {keyRequestSent ? "Request Sent" : "Request Key from Admin"}
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Categories Sidebar */}
-            <Card className="lg:col-span-1">
-              <CardHeader>
-                <CardTitle className="text-lg">Categories</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {categories.map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => setSelectedCategory(category.id)}
-                    className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors ${
-                      selectedCategory === category.id ? 'bg-accent' : 'hover:bg-accent/50'
-                    }`}
-                  >
-                    <span className="text-sm">{category.name}</span>
-                    <span className="text-xs text-muted-foreground">{category.count}</span>
-                  </button>
-                ))}
-              </CardContent>
-            </Card>
-
-            {/* Course Grid */}
-            <div className="lg:col-span-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {filteredCourses.map((course) => (
-                  <Card key={course.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader className="space-y-3">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <Badge variant="outline" className="mb-2">{course.code}</Badge>
-                          <CardTitle className="text-lg leading-tight">{course.name}</CardTitle>
-                        </div>
-                        <Badge className={getDifficultyColor(course.difficulty)}>
-                          {course.difficulty}
-                        </Badge>
-                      </div>
-                      
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback>
-                            {course.lecturer.split(' ').map(n => n[0]).join('')}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="text-sm font-medium">{course.lecturer}</p>
-                          <p className="text-xs text-muted-foreground">{course.department}</p>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-muted-foreground">{course.description}</p>
-
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="flex items-center gap-1">
-                          <Users className="h-4 w-4 text-muted-foreground" />
-                          <span>{course.enrolledStudents}/{course.maxStudents}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Star className="h-4 w-4 text-yellow-500" />
-                          <span>{course.rating}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <GraduationCap className="h-4 w-4 text-muted-foreground" />
-                          <span>{course.credits} credits</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-4 w-4 text-muted-foreground" />
-                          <span>{course.schedule}</span>
-                        </div>
-                      </div>
-
-                      {course.prerequisites.length > 0 && (
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">Prerequisites:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {course.prerequisites.map((prereq, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
-                                {prereq}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Enrollment</span>
-                          <span>{Math.round((course.enrolledStudents / course.maxStudents) * 100)}% full</span>
-                        </div>
-                        <Progress value={(course.enrolledStudents / course.maxStudents) * 100} />
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Button className="flex-1">
-                          <Plus className="h-4 w-4 mr-2" />
-                          Enroll
-                        </Button>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setSelectedCourseForEnrollment(null)}>Cancel</Button>
+            <Button onClick={handleEnrollSubmit} disabled={isEnrolling || !enrollmentKeyInput}>
+              {isEnrolling && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+              Enroll Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
