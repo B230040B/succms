@@ -2,15 +2,18 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { Session, User } from '@supabase/supabase-js';
 import { supabase } from '/workspaces/succms/succms/src/lib/supabase.ts';
 
-// Updated Profile to include Academic Details
+// Updated Profile to include all Database Fields
 export type UserProfile = {
   id: string;
   full_name: string;
   username: string;
   email: string;
   role: 'student' | 'lecturer' | 'admin';
-  faculty?: string;   // New field for Course Filtering
-  programme?: string; // New field for Course Filtering
+  faculty?: string;   
+  programme?: string; 
+  avatar_url?: string; // <--- Added this
+  bio?: string;        // <--- Added this
+  cover_url?: string;  // <--- Added this
 };
 
 interface AuthContextType {
@@ -21,7 +24,6 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<any>;
   signUp: (email: string, password: string, username: string, fullName: string, role: 'student' | 'lecturer' | 'admin') => Promise<any>;
   signOut: () => Promise<any>;
-  // This is the missing part causing your error:
   updateProfile: (updates: Partial<UserProfile>) => Promise<any>; 
   refreshProfile: () => Promise<void>; 
 }
@@ -118,7 +120,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   // --- NEW FUNCTIONS ---
 
-  // Allow components to update the profile (e.g., setting Faculty)
   const updateProfile = async (updates: Partial<UserProfile>) => {
     if (!user) return { error: "No user" };
 

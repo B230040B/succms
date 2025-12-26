@@ -1,30 +1,50 @@
 import { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "/workspaces/succms/succms/src/lib/supabase.ts";
 import { useAuth } from "/workspaces/succms/succms/src/contexts/AuthContext.tsx";
-import { CoursePage } from "./CoursePage"; // Ensure you created this file!
+import { CoursePage } from "./CoursePage"; 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Search, Plus, Loader2 } from "lucide-react";
+import { Search, Plus, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 
 export function CourseManagement() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState("my-teaching");
   const [courses, setCourses] = useState<any[]>([]);
   const [myCourses, setMyCourses] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
-  // State for View Switching
+  // View Switching
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+
+  // Pagination State (Same as Student View)
+  const ITEMS_PER_PAGE = 9;
+  const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {
     if (profile) {
       fetchData();
     }
   }, [profile]);
+
+  // Open CoursePage directly when courseId is present in URL
+  useEffect(() => {
+    const urlCourseId = searchParams.get('courseId');
+    if (urlCourseId && urlCourseId !== selectedCourseId) {
+      setSelectedCourseId(urlCourseId);
+    }
+  }, [searchParams]);
+
+  // Reset pagination when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -38,7 +58,6 @@ export function CourseManagement() {
       .select('course_id, courses(*)')
       .eq('user_id', profile?.id);
     
-    // Extract the nested 'courses' object from the result
     setMyCourses(myData?.map((x: any) => x.courses) || []);
     setIsLoading(false);
   };
@@ -50,7 +69,7 @@ export function CourseManagement() {
     });
     
     if (!error) {
-      fetchData(); // Refresh lists to show the new course in "My Teaching"
+      fetchData(); 
       setActiveTab("my-teaching");
     } else {
         console.error("Error claiming course:", error);
@@ -59,18 +78,23 @@ export function CourseManagement() {
 
   // --- VIEW LOGIC ---
 
-  // 1. If a course is selected, show the Detail Page instead of the list
   if (selectedCourseId) {
-    return <CoursePage courseId={selectedCourseId} onBack={() => setSelectedCourseId(null)} />;
+    return <CoursePage courseId={selectedCourseId} onBack={() => { setSelectedCourseId(null); navigate('/courses', { replace: true }); }} />;
   }
 
-  // 2. Filter Logic for Search
+  // Filter Logic
   const filteredAll = courses.filter(c => 
     c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     c.course_code.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // 3. Loading State (Fixes the "unused variable" error)
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredAll.length / ITEMS_PER_PAGE);
+  const paginatedCourses = filteredAll.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE, 
+    currentPage * ITEMS_PER_PAGE
+  );
+
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center h-[50vh] space-y-4">
@@ -140,10 +164,10 @@ export function CourseManagement() {
           </div>
         </TabsContent>
 
-        {/* ALL COURSES TAB */}
-        <TabsContent value="all-courses" className="space-y-4">
+        {/* ALL COURSES TAB (With Pagination) */}
+        <TabsContent value="all-courses" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-             {filteredAll.map(course => {
+             {paginatedCourses.map(course => {
                const isAlreadyTeaching = myCourses.some(m => m.id === course.id);
                return (
                 <Card key={course.id}>
@@ -165,6 +189,31 @@ export function CourseManagement() {
                );
              })}
           </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </div>

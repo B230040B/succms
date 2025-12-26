@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "/workspaces/succms/succms/src/contexts/AuthContext.tsx";
 import { supabase } from "/workspaces/succms/succms/src/lib/supabase.ts";
 import { CoursePage } from "./CoursePage"; // <--- IMPORT THIS
@@ -51,6 +52,8 @@ interface Course {
 
 export function StudentCourses() {
   const { profile, updateProfile } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   
   // Data State
   const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
@@ -61,7 +64,10 @@ export function StudentCourses() {
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("my-courses");
-  const [viewingCourseId, setViewingCourseId] = useState<string | null>(null); // <--- NEW STATE FOR NAVIGATION
+  
+  // Read courseId from URL search params (e.g., /courses?courseId=xxx&assignmentId=yyy)
+  const courseIdFromUrl = searchParams.get('courseId');
+  const [viewingCourseId, setViewingCourseId] = useState<string | null>(courseIdFromUrl); // <--- NEW STATE FOR NAVIGATION
   
   // Pagination State
   const ITEMS_PER_PAGE = 9;
@@ -91,6 +97,14 @@ export function StudentCourses() {
       fetchData();
     }
   }, [profile]);
+
+  // Sync URL courseId param with viewingCourseId state
+  useEffect(() => {
+    const urlCourseId = searchParams.get('courseId');
+    if (urlCourseId && urlCourseId !== viewingCourseId) {
+      setViewingCourseId(urlCourseId);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -227,7 +241,11 @@ export function StudentCourses() {
 
   // *** IF VIEWING A COURSE, SHOW THE TEAMS VIEW ***
   if (viewingCourseId) {
-    return <CoursePage courseId={viewingCourseId} onBack={() => setViewingCourseId(null)} />;
+    return <CoursePage courseId={viewingCourseId} onBack={() => {
+      setViewingCourseId(null);
+      // Clear URL params when going back
+      navigate('/courses', { replace: true });
+    }} />;
   }
 
   const displayedAvailable = availableCourses.filter(c => 

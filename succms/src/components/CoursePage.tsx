@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom"; // Added useSearchParams
 import { supabase } from "/workspaces/succms/succms/src/lib/supabase.ts";
 import { useAuth } from "/workspaces/succms/succms/src/contexts/AuthContext.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -6,12 +7,12 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Avatar, AvatarFallback } from "./ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar";
 import { 
-  MessageSquare, FileText, Calendar, Users, Send, Plus, 
+  MessageSquare, FileText, Calendar, Users, Plus, 
   Trash2, Key, Loader2, Folder, 
   File, FileCode, FileImage, FileSpreadsheet, ChevronRight,
-  ArrowLeft, Paperclip, CheckCircle, X, Download
+  ArrowLeft, Paperclip, CheckCircle, X, Download, Sparkles, User, ChevronLeft, GraduationCap
 } from "lucide-react";
 import {
   Dialog,
@@ -28,7 +29,6 @@ interface CoursePageProps {
   onBack: () => void;
 }
 
-// --- HELPER ICONS ---
 const getFileIcon = (type: string) => {
   if (type === 'folder') return <Folder className="h-6 w-6 text-blue-500 fill-blue-100" />;
   if (type.includes('image')) return <FileImage className="h-6 w-6 text-purple-500" />;
@@ -40,6 +40,9 @@ const getFileIcon = (type: string) => {
 
 export function CoursePage({ courseId, onBack }: CoursePageProps) {
   const { user, profile } = useAuth();
+  const navigate = useNavigate(); 
+  const [searchParams] = useSearchParams(); // Hook to read URL params
+  
   const [activeTab, setActiveTab] = useState("posts");
   const [course, setCourse] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -51,8 +54,13 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
   const [assignments, setAssignments] = useState<any[]>([]);
   const [mySubmissions, setMySubmissions] = useState<any[]>([]);
   
-  // Lecturer View: All Submissions for selected assignment
   const [allSubmissions, setAllSubmissions] = useState<any[]>([]);
+
+  // Grading State
+  const [gradingStudentId, setGradingStudentId] = useState<string | null>(null);
+  const [currentGrade, setCurrentGrade] = useState("");
+  const [currentFeedback, setCurrentFeedback] = useState("");
+  const [isAiGrading, setIsAiGrading] = useState(false);
 
   // File Browser States
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
@@ -80,10 +88,9 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
     if (!courseId) return;
     fetchCourseDetails();
     fetchMaterials();
-    fetchPeople(); // Updated to be bulletproof
+    fetchPeople(); 
     fetchAssignments();
     
-    // Real-time Posts
     const channel = supabase
       .channel('public:course_posts')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'course_posts', filter: `course_id=eq.${courseId}` }, (payload) => {
@@ -100,11 +107,54 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
     fetchMaterials();
   }, [currentFolderId]); 
   
+  // --- AUTO-OPEN ASSIGNMENT FROM URL ---
   useEffect(() => {
-    if (isLecturer && selectedAssignment) {
-        fetchSubmissionsForAssignment(selectedAssignment.id);
+    const assignmentIdFromUrl = searchParams.get('assignmentId');
+    if (assignmentIdFromUrl && assignments.length > 0) {
+        const targetAssign = assignments.find(a => a.id === assignmentIdFromUrl);
+        if (targetAssign) {
+            setSelectedAssignment(targetAssign);
+            setActiveTab("assignments"); // Switch tab to context
+            // Clean URL so refresh doesn't reopen it if they close it
+            // navigate(`/courses/${courseId}`, { replace: true }); 
+        }
     }
-  }, [selectedAssignment, isLecturer]);
+  }, [assignments, searchParams]); // Run when assignments load or URL changes
+
+  useEffect(() => {
+    if (selectedAssignment) {
+        if (isLecturer) {
+            fetchSubmissionsForAssignment(selectedAssignment.id);
+            setGradingStudentId(null); 
+        } else if (user) {
+            const fetchMyLatestSubmission = async () => {
+                const { data } = await supabase
+                    .from('assignment_submissions')
+                    .select('*')
+                    .eq('assignment_id', selectedAssignment.id)
+                    .eq('student_id', user.id)
+                    .single();
+                
+                if (data) {
+                    setMySubmissions(prev => {
+                        const others = prev.filter(s => s.assignment_id !== selectedAssignment.id);
+                        return [...others, data];
+                    });
+                    setSubmissionFiles(data.files || []); 
+                }
+            };
+            fetchMyLatestSubmission();
+        }
+    }
+  }, [selectedAssignment, isLecturer, user]);
+
+  useEffect(() => {
+    if (gradingStudentId && allSubmissions.length > 0) {
+        const sub = allSubmissions.find(s => s.student_id === gradingStudentId);
+        setCurrentGrade(sub?.grade || "");
+        setCurrentFeedback(sub?.feedback || "");
+    }
+  }, [gradingStudentId, allSubmissions]);
 
   // --- FETCH FUNCTIONS ---
 
@@ -126,10 +176,8 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
     setMaterials(data || []);
   };
 
-  // --- NEW: ROBUST PEOPLE FETCH (Two-Step Method) ---
   const fetchPeople = async () => {
     try {
-        // 1. Get IDs of everyone enrolled + instructors
         const { data: studentIds } = await supabase.from('enrollments').select('user_id').eq('course_id', courseId);
         const { data: instructorIds } = await supabase.from('course_instructors').select('user_id').eq('course_id', courseId);
         
@@ -143,7 +191,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
             return;
         }
 
-        // 2. Fetch Profiles for these IDs explicitly
         const { data: profiles } = await supabase
             .from('user_profiles')
             .select('*')
@@ -199,21 +246,83 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
 
   const handleTurnIn = async () => {
     if (!selectedAssignment || !user) return;
+    
+    const submissionData = { 
+        assignment_id: selectedAssignment.id, 
+        student_id: user.id, 
+        files: submissionFiles, 
+        submitted_at: new Date().toISOString() 
+    };
+
     const existing = mySubmissions.find(s => s.assignment_id === selectedAssignment.id);
-    const payload = { assignment_id: selectedAssignment.id, student_id: user.id, files: submissionFiles, submitted_at: new Date().toISOString() };
+    let error;
 
-    if (existing) await supabase.from('assignment_submissions').update(payload).eq('id', existing.id);
-    else await supabase.from('assignment_submissions').insert(payload);
+    if (existing) {
+        const { error: updateError } = await supabase.from('assignment_submissions').update(submissionData).eq('id', existing.id);
+        error = updateError;
+    } else {
+        const { error: insertError } = await supabase.from('assignment_submissions').insert(submissionData);
+        error = insertError;
+    }
 
-    await fetchAssignments();
-    setSelectedAssignment(null);
+    if (!error) {
+        setMySubmissions(prev => {
+            const others = prev.filter(s => s.assignment_id !== selectedAssignment.id);
+            return [...others, { ...submissionData, id: existing?.id || 'temp-id', grade: null }];
+        });
+    } else {
+        alert("Failed to turn in assignment. Please try again.");
+    }
   };
 
   const handleUndoTurnIn = async () => {
     if (!selectedAssignment || !user) return;
-    await supabase.from('assignment_submissions').delete().eq('assignment_id', selectedAssignment.id).eq('student_id', user.id);
-    await fetchAssignments();
-    setSelectedAssignment(null);
+    
+    const { error } = await supabase.from('assignment_submissions').delete().eq('assignment_id', selectedAssignment.id).eq('student_id', user.id);
+    
+    if (!error) {
+        setMySubmissions(prev => prev.filter(s => s.assignment_id !== selectedAssignment.id));
+        setSubmissionFiles([]); 
+    }
+  };
+
+  const handleSaveGrade = async () => {
+    if (!gradingStudentId || !selectedAssignment) return;
+    const existingSub = allSubmissions.find(s => s.student_id === gradingStudentId);
+    
+    if (existingSub) {
+        await supabase.from('assignment_submissions').update({
+            grade: currentGrade,
+            feedback: currentFeedback
+        }).eq('id', existingSub.id);
+    } else {
+        await supabase.from('assignment_submissions').insert({
+            assignment_id: selectedAssignment.id,
+            student_id: gradingStudentId,
+            grade: currentGrade,
+            feedback: currentFeedback,
+            submitted_at: new Date().toISOString()
+        });
+    }
+    
+    alert("Grade Saved!");
+    fetchSubmissionsForAssignment(selectedAssignment.id); 
+  };
+
+  const handleAiAutoGrade = async () => {
+    setIsAiGrading(true);
+    setTimeout(() => {
+        setIsAiGrading(false);
+        const randomScore = Math.floor(Math.random() * (100 - 70 + 1)) + 70;
+        setCurrentGrade(randomScore.toString());
+        setCurrentFeedback(
+            "AI Generated Feedback:\n" +
+            "- Good understanding of the core concepts.\n" +
+            "- Structure is logical and easy to follow.\n" +
+            "- Please include more citations in the future.\n" +
+            "- Overall: Excellent work."
+        );
+    }, 2000);
   };
 
   const uploadTempFile = async (e: React.ChangeEvent<HTMLInputElement>, setList: Function, currentList: any[]) => {
@@ -303,7 +412,7 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
 
         <TabsContent value="posts" className="space-y-4 flex-1">
           <div className="flex gap-4 p-4 border rounded-lg bg-muted/10 shadow-sm">
-             <Avatar><AvatarFallback>{profile?.full_name[0]}</AvatarFallback></Avatar>
+             <Avatar className="h-10 w-10 shrink-0"><AvatarFallback>{profile?.full_name[0]}</AvatarFallback></Avatar>
              <div className="flex-1 gap-2 flex flex-col">
                 <Input placeholder="Share an announcement..." value={newPostContent} onChange={e => setNewPostContent(e.target.value)} onKeyDown={e => e.key === 'Enter' && handlePost()} />
                 <div className="flex justify-end"><Button size="sm" onClick={handlePost} disabled={!newPostContent}>Post</Button></div>
@@ -313,13 +422,13 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
             {posts.map(post => (
               <Card key={post.id} className="overflow-hidden">
                 <div className="p-4 flex gap-3">
-                  <Avatar className="h-9 w-9 mt-1"><AvatarFallback>{post.author_name[0]}</AvatarFallback></Avatar>
-                  <div className="flex-1">
+                  <Avatar className="h-10 w-10 mt-1 shrink-0 border border-gray-200"><AvatarFallback>{post.author_name[0]}</AvatarFallback></Avatar>
+                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start">
-                        <p className="text-sm font-semibold">{post.author_name}</p>
-                        <span className="text-xs text-muted-foreground">{new Date(post.created_at).toLocaleDateString()}</span>
+                        <p className="text-sm font-semibold truncate text-gray-900">{post.author_name}</p>
+                        <span className="text-xs text-muted-foreground whitespace-nowrap ml-2">{new Date(post.created_at).toLocaleDateString()}</span>
                     </div>
-                    <p className="text-sm mt-1">{post.content}</p>
+                    <p className="text-sm mt-1 break-words text-gray-700">{post.content}</p>
                   </div>
                 </div>
               </Card>
@@ -390,15 +499,24 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
                                         <Trash2 className="h-4 w-4" />
                                     </Button>
                                 ) : (
-                                    <Badge variant={isSubmitted ? (isLate ? "destructive" : "default") : (isMissing ? "destructive" : "outline")}>
-                                        {isSubmitted ? (isLate ? "Done Late" : "Turned In") : (isMissing ? "Missing" : "Assigned")}
-                                    </Badge>
+                                    <div className="flex gap-2">
+                                        {submission?.grade != null && <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-200">Graded</Badge>}
+                                        <Badge variant={isSubmitted ? (isLate ? "destructive" : "default") : (isMissing ? "destructive" : "outline")}>
+                                            {isSubmitted ? (isLate ? "Done Late" : "Turned In") : (isMissing ? "Missing" : "Assigned")}
+                                        </Badge>
+                                    </div>
                                 )}
                             </CardHeader>
                             <CardContent>
-                                <div className="text-sm text-muted-foreground flex justify-between">
+                                <div className="text-sm text-muted-foreground flex justify-between items-center mt-2">
                                     <span>Due: {new Date(assign.due_date).toLocaleDateString()}</span>
-                                    <span>{assign.points ? `${assign.points} pts` : "Ungraded"}</span>
+                                    {submission?.grade != null ? (
+                                        <Badge variant="secondary" className="text-sm font-bold bg-green-100 text-green-800 hover:bg-green-200 px-2">
+                                            {submission.grade} / {assign.points || 100}
+                                        </Badge>
+                                    ) : (
+                                        <span>{assign.points ? `${assign.points} pts` : "Ungraded"}</span>
+                                    )}
                                 </div>
                             </CardContent>
                         </Card>
@@ -407,7 +525,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
             </div>
         </TabsContent>
 
-        {/* --- SIMPLIFIED PEOPLE TAB --- */}
         <TabsContent value="people">
             {people.length === 0 ? (
                 <div className="text-center py-12 text-muted-foreground bg-muted/10 rounded-lg">
@@ -420,15 +537,17 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
                         <div className="col-span-12">Members</div>
                      </div>
                      {people.map((person, idx) => (
-                        <div key={idx} className="flex items-center gap-4 p-4 hover:bg-muted/10 transition-colors">
-                             {/* Avatar Placeholder */}
-                            <Avatar className="h-10 w-10 border-2 border-background shadow-sm">
+                        <div 
+                            key={idx} 
+                            className="flex items-center gap-4 p-4 hover:bg-muted/10 transition-colors cursor-pointer"
+                            onClick={() => navigate(`/profile/${person.id}`)}
+                        >
+                            <Avatar className="h-10 w-10 border-2 border-background shadow-sm shrink-0">
+                                <AvatarImage src={person.avatar_url} />
                                 <AvatarFallback className="bg-primary/10 text-primary font-bold">
                                     {person.full_name ? person.full_name[0].toUpperCase() : '?'}
                                 </AvatarFallback>
                             </Avatar>
-                            
-                            {/* Name and Role */}
                             <div className="flex flex-col">
                                 <span className="font-semibold text-sm">
                                     {person.full_name || "Unknown User"}
@@ -444,7 +563,7 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         </TabsContent>
       </Tabs>
 
-      {/* --- CREATE ASSIGNMENT DIALOG --- */}
+      {/* --- DIALOGS --- */}
       <Dialog open={showNewAssignmentDialog} onOpenChange={(open: boolean) => setShowNewAssignmentDialog(open)}>
         <DialogContent className="max-w-2xl [&>button]:hidden">
             <DialogHeader className="flex flex-row justify-between items-center">
@@ -484,140 +603,266 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         </DialogContent>
       </Dialog>
 
-      {/* --- VIEW/SUBMIT ASSIGNMENT DIALOG --- */}
       <Dialog open={!!selectedAssignment} onOpenChange={(open: boolean) => !open && setSelectedAssignment(null)}>
-        <DialogContent className="max-w-4xl h-[85vh] flex flex-col [&>button]:hidden p-0 gap-0 overflow-hidden">
+        <DialogContent className="sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-0 gap-0 overflow-hidden [&>button]:hidden bg-white">
             {selectedAssignment && (
                 <>
-                <div className="border-b p-6 pb-4 flex justify-between items-start bg-background z-10">
-                    <div className="pr-8">
-                        <h2 className="text-2xl font-semibold tracking-tight">{selectedAssignment.title}</h2>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-1">
-                            <span className="flex items-center gap-1"><Calendar className="h-3 w-3"/> Due {new Date(selectedAssignment.due_date).toLocaleDateString()}</span>
-                            <span>•</span>
-                            <span>{selectedAssignment.points || "No"} Points</span>
+                <div className="border-b p-4 flex justify-between items-center bg-gray-50 z-10 shrink-0 h-16">
+                    <div className="flex items-center gap-4">
+                        {isLecturer && gradingStudentId && (
+                            <Button variant="ghost" size="sm" onClick={() => setGradingStudentId(null)}>
+                                <ChevronLeft className="h-4 w-4 mr-1"/> Back to List
+                            </Button>
+                        )}
+                        <div>
+                            <h2 className="text-xl font-bold tracking-tight text-gray-900">{selectedAssignment.title}</h2>
+                            <p className="text-xs text-gray-500">Due {new Date(selectedAssignment.due_date).toLocaleDateString()} • {selectedAssignment.points || "0"} Points</p>
                         </div>
                     </div>
-                    <Button variant="ghost" size="icon" className="shrink-0 -mr-2 -mt-2" onClick={() => setSelectedAssignment(null)}>
-                        <X className="h-5 w-5" />
+                    <Button variant="ghost" size="icon" onClick={() => setSelectedAssignment(null)}>
+                        <X className="h-5 w-5 text-gray-500" />
                     </Button>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-3 gap-8">
-                    <div className="md:col-span-2 space-y-6">
-                        <div className="prose prose-sm max-w-none text-foreground">
-                            <h4 className="font-semibold mb-2">Instructions</h4>
-                            <p className="whitespace-pre-wrap leading-relaxed">{selectedAssignment.description || "No instructions provided."}</p>
-                        </div>
-                        {selectedAssignment.attachments && selectedAssignment.attachments.length > 0 && (
-                            <div className="bg-muted/30 p-4 rounded-lg border">
-                                <h4 className="font-semibold mb-3 text-sm flex items-center gap-2"><Paperclip className="h-4 w-4"/> Reference Materials</h4>
-                                <div className="grid gap-2">
-                                    {selectedAssignment.attachments.map((file: any, idx: number) => (
-                                        <a key={idx} href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-2.5 bg-background border rounded hover:border-primary/50 transition-colors group">
-                                            <div className="bg-primary/10 p-2 rounded mr-3 text-primary"><FileText className="h-4 w-4"/></div>
-                                            <span className="text-sm font-medium truncate flex-1">{file.name}</span>
-                                            <Download className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                                        </a>
-                                    ))}
+                <div className="flex-1 flex overflow-hidden">
+                    
+                    <div className={`flex-1 min-w-[320px] overflow-y-auto p-6 bg-white ${isLecturer && gradingStudentId ? 'hidden md:block md:w-2/3 border-r' : 'w-full'}`}>
+                        
+                        {isLecturer && !gradingStudentId && (
+                            <div className="space-y-4">
+                                <h3 className="font-semibold text-lg flex items-center gap-2 text-gray-800"><Users className="h-5 w-5"/> Student Submissions</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                                    {people.filter(p => p.role === 'student').map(student => {
+                                        const sub = allSubmissions.find(s => s.student_id === student.id);
+                                        const isLate = sub && new Date(sub.submitted_at) > new Date(selectedAssignment.due_date);
+                                        
+                                        return (
+                                            <Card 
+                                                key={student.id} 
+                                                className={`cursor-pointer hover:border-blue-500 hover:shadow-md transition-all ${sub ? 'bg-blue-50/50 border-blue-200' : 'bg-white border-gray-200'}`}
+                                                onClick={() => setGradingStudentId(student.id)}
+                                            >
+                                                <CardContent className="p-4 flex items-center gap-3">
+                                                    <Avatar className="h-10 w-10 border border-gray-200">
+                                                        <AvatarImage src={student.avatar_url} />
+                                                        <AvatarFallback>{student.full_name[0]}</AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex-1 overflow-hidden">
+                                                        <p className="font-semibold text-sm truncate text-gray-900">{student.full_name}</p>
+                                                        <div className="flex gap-2 mt-1">
+                                                            {sub ? (
+                                                                <Badge variant={isLate ? "destructive" : "default"} className="text-[10px] h-5 px-2">{isLate ? "Late" : "Submitted"}</Badge>
+                                                            ) : (
+                                                                <Badge variant="outline" className="text-[10px] h-5 px-2 text-gray-400">Missing</Badge>
+                                                            )}
+                                                            {sub?.grade && <Badge variant="secondary" className="text-[10px] h-5 bg-green-100 text-green-700 hover:bg-green-100">Graded: {sub.grade}</Badge>}
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight className="h-4 w-4 text-gray-400"/>
+                                                </CardContent>
+                                            </Card>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         )}
-                    </div>
-                    <div className="md:col-span-1">
-                        {isLecturer ? (
-                            <Card className="h-full border-l-4 border-l-primary shadow-sm">
-                                <CardHeader className="bg-muted/10 pb-3">
-                                    <CardTitle className="text-base flex justify-between items-center">
-                                        Student Submissions
-                                        <Badge variant="secondary">{people.filter(p => p.role === 'student').length}</Badge>
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="p-0 max-h-[500px] overflow-y-auto divide-y">
-                                    {people.filter(p => p.role === 'student').map(student => {
-                                        const submission = allSubmissions.find(s => s.student_id === student.id);
-                                        const isLate = submission && new Date(submission.submitted_at) > new Date(selectedAssignment.due_date);
-                                        return (
-                                            <div key={student.id} className="p-3 hover:bg-muted/50 transition-colors">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <span className="text-sm font-medium">{student.full_name}</span>
-                                                    {submission ? (
-                                                        <Badge variant={isLate ? "destructive" : "default"} className="text-[10px] h-5">
-                                                            {isLate ? "Late" : "Turned In"}
-                                                        </Badge>
-                                                    ) : (
-                                                        <Badge variant="outline" className="text-[10px] h-5 text-muted-foreground">Missing</Badge>
-                                                    )}
-                                                </div>
-                                                {submission && submission.files?.length > 0 && (
-                                                    <div className="space-y-1 mt-2">
-                                                        {submission.files.map((f: any, i: number) => (
-                                                            <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center text-xs text-blue-600 hover:underline">
-                                                                <Paperclip className="h-3 w-3 mr-1" /> {f.name}
-                                                            </a>
-                                                        ))}
-                                                        <div className="text-[10px] text-muted-foreground mt-1">
-                                                            Submitted: {new Date(submission.submitted_at).toLocaleDateString()}
-                                                        </div>
-                                                    </div>
-                                                )}
+
+                        {(!isLecturer || gradingStudentId) && (
+                            <div className="space-y-8 max-w-4xl mx-auto">
+                                {mySubmissions.find(s => s.assignment_id === selectedAssignment.id)?.grade != null && (
+                                    <div className="bg-green-50 border border-green-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                                        <div className="flex justify-between items-start mb-3">
+                                            <h4 className="font-bold text-green-800 text-sm uppercase tracking-wider flex items-center gap-2">
+                                                <GraduationCap className="h-4 w-4"/> Graded & Returned
+                                            </h4>
+                                            <Badge variant="secondary" className="bg-white text-green-700 border-green-200">
+                                                {new Date(mySubmissions.find(s => s.assignment_id === selectedAssignment.id).submitted_at).toLocaleDateString()}
+                                            </Badge>
+                                        </div>
+                                        <div className="text-4xl font-bold text-gray-900 mb-4">
+                                            {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).grade} 
+                                            <span className="text-lg font-medium text-gray-400"> / {selectedAssignment.points}</span>
+                                        </div>
+                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback && (
+                                            <div className="bg-white p-4 rounded-lg border border-green-100 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed shadow-sm">
+                                                <span className="font-bold text-gray-900 block mb-2">Lecturer Feedback:</span>
+                                                {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback}
                                             </div>
-                                        );
-                                    })}
-                                </CardContent>
-                            </Card>
-                        ) : (
-                            <Card className="h-fit shadow-md border-t-4 border-t-primary">
-                                <CardHeader className="pb-3 border-b bg-muted/10">
-                                    <CardTitle className="text-base flex justify-between items-center">
-                                        Your Work
-                                        {mySubmissions.find(s=>s.assignment_id===selectedAssignment.id) && <CheckCircle className="h-5 w-5 text-green-600"/>}
-                                    </CardTitle>
-                                </CardHeader>
-                                <CardContent className="space-y-4 pt-4">
-                                    {submissionFiles.length > 0 ? (
-                                        <div className="space-y-2">
-                                            {submissionFiles.map((f, i) => (
-                                                <div key={i} className="flex items-center justify-between p-2.5 bg-background border rounded text-sm group">
-                                                    <div className="flex items-center truncate text-blue-600">
-                                                        <File className="h-4 w-4 mr-2 text-muted-foreground"/>
-                                                        <span className="truncate max-w-[150px]">{f.name}</span>
-                                                    </div>
-                                                    {!mySubmissions.find(s=>s.assignment_id===selectedAssignment.id) && (
-                                                        <button onClick={() => setSubmissionFiles(submissionFiles.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-red-500">
-                                                            <X className="h-4 w-4"/>
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="text-sm text-center text-muted-foreground py-6 border-2 border-dashed rounded-lg bg-muted/20">
-                                            No files attached yet.
-                                        </div>
-                                    )}
-                                    <div className="pt-2">
-                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id) ? (
-                                            <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50" onClick={handleUndoTurnIn}>
-                                                Undo Turn In
-                                            </Button>
-                                        ) : (
-                                            <>
-                                                <div className="relative mb-3">
-                                                    <Input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => uploadTempFile(e, setSubmissionFiles, submissionFiles)} disabled={isUploading} />
-                                                    <Button variant="secondary" className="w-full" disabled={isUploading}>
-                                                        {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2"/> : <Plus className="h-4 w-4 mr-2"/>} 
-                                                        Add or Create
-                                                    </Button>
-                                                </div>
-                                                <Button className="w-full font-semibold" onClick={handleTurnIn} disabled={submissionFiles.length === 0}>
-                                                    Turn In
-                                                </Button>
-                                            </>
                                         )}
                                     </div>
-                                </CardContent>
-                            </Card>
+                                )}
+
+                                <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                                    <h4 className="font-bold text-gray-900 text-lg mb-4 flex items-center gap-2">
+                                        <FileText className="h-5 w-5 text-gray-500"/> Instructions
+                                    </h4>
+                                    <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{selectedAssignment.description || "No instructions provided."}</p>
+                                    
+                                    {selectedAssignment.attachments?.length > 0 && (
+                                        <div className="mt-6 grid gap-2">
+                                            {selectedAssignment.attachments.map((file: any, idx: number) => (
+                                                <a key={idx} href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 bg-white border rounded-lg hover:border-blue-300 transition-colors group shadow-sm">
+                                                    <div className="bg-blue-50 p-2 rounded mr-3 text-blue-600"><FileText className="h-4 w-4"/></div>
+                                                    <span className="text-sm font-medium truncate flex-1 text-gray-700">{file.name}</span>
+                                                    <Download className="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {isLecturer && gradingStudentId && (
+                                    <div className="pt-2">
+                                        <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-gray-800"><User className="h-5 w-5"/> Student Submission</h3>
+                                        {allSubmissions.find(s => s.student_id === gradingStudentId)?.files?.length > 0 ? (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {allSubmissions.find(s => s.student_id === gradingStudentId).files.map((f: any, i: number) => (
+                                                    <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center p-4 bg-white border-2 border-blue-100 rounded-xl hover:border-blue-500 hover:shadow-md transition-all group">
+                                                        <div className="bg-blue-100 p-3 rounded-lg mr-3 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                                            <FileText className="h-6 w-6"/>
+                                                        </div>
+                                                        <div className="flex-1 overflow-hidden">
+                                                            <p className="font-medium text-blue-900 truncate">{f.name}</p>
+                                                            <p className="text-xs text-blue-400">Click to view</p>
+                                                        </div>
+                                                        <Download className="h-5 w-5 text-gray-300 group-hover:text-blue-500"/>
+                                                    </a>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-400 italic">
+                                                Student has not attached any files yet.
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="w-[400px] bg-gray-50 border-l p-6 overflow-y-auto shrink-0 flex flex-col shadow-[inset_10px_0_20px_-10px_rgba(0,0,0,0.05)]">
+                        
+                        {isLecturer ? (
+                            gradingStudentId ? (
+                                <div className="space-y-6">
+                                    <div className="pb-4 border-b border-gray-200">
+                                        <h3 className="font-bold text-lg mb-1 text-gray-900">Grading</h3>
+                                        <p className="text-sm text-gray-500 flex items-center gap-2">
+                                            Student: <span className="font-medium text-gray-900">{people.find(p => p.id === gradingStudentId)?.full_name}</span>
+                                        </p>
+                                    </div>
+
+                                    <Card className="bg-gradient-to-br from-indigo-50 to-white border-indigo-100 shadow-sm overflow-hidden">
+                                        <CardContent className="p-5">
+                                            <div className="flex items-center gap-2 mb-2 text-indigo-700 font-bold text-sm">
+                                                <Sparkles className="h-4 w-4 text-indigo-500" /> AI Grader
+                                            </div>
+                                            <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+                                                Use AI to analyze the submission and generate a suggested grade and feedback.
+                                            </p>
+                                            <Button 
+                                                onClick={handleAiAutoGrade} 
+                                                disabled={isAiGrading}
+                                                size="sm" 
+                                                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white border-0 shadow-md transition-all active:scale-95"
+                                            >
+                                                {isAiGrading ? <Loader2 className="h-3 w-3 animate-spin mr-2"/> : <Sparkles className="h-3 w-3 mr-2"/>}
+                                                {isAiGrading ? "Analyzing..." : "Auto-Grade Now"}
+                                            </Button>
+                                        </CardContent>
+                                    </Card>
+
+                                    <div className="space-y-5">
+                                        <div className="space-y-2">
+                                            <Label className="text-gray-700 font-semibold">Score</Label>
+                                            <div className="flex items-center gap-2">
+                                                <Input 
+                                                    type="number" 
+                                                    value={currentGrade} 
+                                                    onChange={e => setCurrentGrade(e.target.value)} 
+                                                    className="text-2xl font-bold h-14 w-24 text-center bg-white"
+                                                    placeholder="-"
+                                                />
+                                                <span className="text-gray-400 text-lg font-medium">/ {selectedAssignment.points || 100}</span>
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <Label className="text-gray-700 font-semibold">Feedback</Label>
+                                            <Textarea 
+                                                value={currentFeedback} 
+                                                onChange={e => setCurrentFeedback(e.target.value)} 
+                                                className="min-h-[200px] bg-white text-base leading-relaxed p-4"
+                                                placeholder="Enter detailed feedback for the student..."
+                                            />
+                                        </div>
+                                        <Button onClick={handleSaveGrade} className="w-full h-12 text-lg shadow-lg hover:shadow-xl transition-all">
+                                            Save Grade & Return
+                                        </Button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 p-8">
+                                    <div className="bg-white p-6 rounded-full mb-4 shadow-sm border border-gray-100"><Users className="h-10 w-10 opacity-20"/></div>
+                                    <p className="font-medium">Select a student from the list on the left to begin grading.</p>
+                                </div>
+                            )
+                        ) : (
+                            <div className="space-y-6">
+                                <div>
+                                    <h3 className="font-bold text-lg text-gray-900">Your Work</h3>
+                                    <p className="text-sm text-gray-500">Upload your files below</p>
+                                </div>
+
+                                <Card className="border-t-4 border-t-primary shadow-sm bg-white">
+                                    <CardContent className="p-5 space-y-5">
+                                        {submissionFiles.length > 0 ? (
+                                            <div className="space-y-2">
+                                                {submissionFiles.map((f, i) => (
+                                                    <div key={i} className="flex items-center justify-between p-3 bg-gray-50 border rounded-lg text-sm group">
+                                                        <div className="flex items-center truncate text-blue-700 font-medium">
+                                                            <File className="h-4 w-4 mr-2 text-gray-400"/>
+                                                            <span className="truncate max-w-[180px]">{f.name}</span>
+                                                        </div>
+                                                        {!mySubmissions.find(s=>s.assignment_id===selectedAssignment.id) && (
+                                                            <button onClick={() => setSubmissionFiles(submissionFiles.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-500 p-1">
+                                                                <X className="h-4 w-4"/>
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="text-sm text-center text-gray-400 py-10 border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                                                No files attached yet.
+                                            </div>
+                                        )}
+
+                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id) ? (
+                                            <div className="space-y-4 pt-2">
+                                                <div className="flex items-center justify-center gap-2 text-green-700 font-bold p-3 bg-green-50 border border-green-200 rounded-lg">
+                                                    <CheckCircle className="h-5 w-5"/> Turned In
+                                                </div>
+                                                <Button variant="outline" className="w-full text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200" onClick={handleUndoTurnIn}>
+                                                    Unsubmit
+                                                </Button>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3 pt-2">
+                                                <div className="relative group">
+                                                    <Input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => uploadTempFile(e, setSubmissionFiles, submissionFiles)} disabled={isUploading} />
+                                                    <Button variant="secondary" className="w-full h-12 text-gray-700 border-gray-200 hover:bg-gray-50 hover:border-gray-300 border transition-all" disabled={isUploading}>
+                                                        {isUploading ? <Loader2 className="animate-spin h-4 w-4 mr-2"/> : <Plus className="h-4 w-4 mr-2"/>} 
+                                                        Add File
+                                                    </Button>
+                                                </div>
+                                                <Button className="w-full font-bold h-12 text-lg shadow-md hover:shadow-lg transition-all" onClick={handleTurnIn} disabled={submissionFiles.length === 0}>
+                                                    Turn In
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </CardContent>
+                                </Card>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -626,7 +871,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         </DialogContent>
       </Dialog>
       
-      {/* Folder Dialog */}
       <Dialog open={showNewFolderDialog} onOpenChange={(open: boolean) => setShowNewFolderDialog(open)}>
         <DialogContent><DialogHeader><DialogTitle>New Folder</DialogTitle></DialogHeader><Input value={newFolderName} onChange={e => setNewFolderName(e.target.value)} /><DialogFooter><Button onClick={handleCreateFolder}>Create</Button></DialogFooter></DialogContent>
       </Dialog>

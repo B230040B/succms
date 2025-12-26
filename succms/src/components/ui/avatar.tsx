@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import * as AvatarPrimitive from "@radix-ui/react-avatar@1.1.3";
+import * as AvatarPrimitive from "@radix-ui/react-avatar";
 
-import { cn } from "./utils";
+import { cn } from "./utils"; // Make sure this path is correct for your project
 
 function Avatar({
   className,
@@ -13,7 +13,7 @@ function Avatar({
     <AvatarPrimitive.Root
       data-slot="avatar"
       className={cn(
-        "relative flex size-10 shrink-0 overflow-hidden rounded-full",
+        "relative flex shrink-0 overflow-hidden rounded-full",
         className,
       )}
       {...props}
@@ -28,7 +28,8 @@ function AvatarImage({
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
-      className={cn("aspect-square size-full", className)}
+      // FIXED: 'h-full w-full' works on ALL Tailwind versions. 'size-full' does not.
+      className={cn("aspect-square h-full w-full object-cover", className)}
       {...props}
     />
   );
@@ -42,7 +43,7 @@ function AvatarFallback({
     <AvatarPrimitive.Fallback
       data-slot="avatar-fallback"
       className={cn(
-        "bg-muted flex size-full items-center justify-center rounded-full",
+        "bg-muted flex h-full w-full items-center justify-center rounded-full bg-gray-100 text-gray-500",
         className,
       )}
       {...props}

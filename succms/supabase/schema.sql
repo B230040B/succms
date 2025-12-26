@@ -86,6 +86,8 @@ CREATE TABLE IF NOT EXISTS public.assignment_submissions (
   submission_text TEXT,
   submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   is_late BOOLEAN DEFAULT FALSE,
+  grade INTEGER,
+  feedback TEXT,
   UNIQUE(assignment_id, student_id)
 );
 
@@ -435,11 +437,25 @@ CREATE POLICY "Allow students to submit assignments"
   ON public.assignment_submissions FOR INSERT
   WITH CHECK (auth.uid() = student_id);
 
--- Students can update their own submissions
-CREATE POLICY "Allow students to update their submissions"
+-- Students can update their own submissions, lecturers can update grades
+CREATE POLICY "Allow students and lecturers to update submissions"
   ON public.assignment_submissions FOR UPDATE
-  USING (auth.uid() = student_id)
-  WITH CHECK (auth.uid() = student_id);
+  USING (
+    auth.uid() = student_id OR
+    auth.uid() IN (
+      SELECT user_id FROM public.course_instructors 
+      WHERE course_id IN (SELECT course_id FROM public.course_assignments WHERE id = assignment_id)
+    ) OR
+    auth.uid() IN (SELECT id FROM public.user_profiles WHERE role = 'admin')
+  )
+  WITH CHECK (
+    auth.uid() = student_id OR
+    auth.uid() IN (
+      SELECT user_id FROM public.course_instructors 
+      WHERE course_id IN (SELECT course_id FROM public.course_assignments WHERE id = assignment_id)
+    ) OR
+    auth.uid() IN (SELECT id FROM public.user_profiles WHERE role = 'admin')
+  );
 
 -- STUDENT_GRADES RLS Policies
 -- Students can view their own grades

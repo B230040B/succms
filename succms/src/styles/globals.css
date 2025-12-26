@@ -187,3 +187,22 @@
 html {
   font-size: var(--font-size);
 }
+
+/* Profile cover height (responsive) */
+.profile-cover {
+  height: 9rem; /* mobile */
+}
+
+@media (min-width: 768px) {
+  .profile-cover {
+    height: 12rem; /* desktop */
+  }
+}
+
+/* Ensure the inner image crops to the container */
+.profile-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
