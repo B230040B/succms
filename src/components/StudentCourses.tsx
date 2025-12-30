@@ -1,0 +1,525 @@
+import React, { useState, useEffect } from "react";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext.tsx";
+import { supabase } from "@/lib/supabase.ts";
+import { CoursePage } from "./CoursePage"; // <--- IMPORT THIS
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Badge } from "./ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "./ui/dialog";
+import {
+  Search,
+  BookOpen,
+  Clock,
+  Users,
+  Plus,
+  Loader2,
+  AlertCircle,
+  Key,
+  GraduationCap,
+  ChevronLeft,
+  ChevronRight,
+  Send,
+  ArrowRightCircle
+} from "lucide-react";
+import { Alert, AlertDescription } from "./ui/alert";
+import { Label } from "./ui/label";
+
+// --- Types ---
+interface Course {
+  id: string;
+  course_code: string;
+  name: string;
+  chinese_name: string | null;
+  faculty: string;
+  programme: string;
+  course_type: "common_core" | "discipline_core" | "elective_open" | "elective_core";
+  credit_hours: number;
+  max_capacity: number;
+  enrollment_key: string | null;
+  status: "active" | "unavailable" | "full" | "open";
+  semester: string;
+}
+
+export function StudentCourses() {
+  const { profile, updateProfile } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  
+  // Data State
+  const [enrolledCourses, setEnrolledCourses] = useState<Course[]>([]);
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [programmeOptions, setProgrammeOptions] = useState<{faculty: string, programme: string}[]>([]);
+  
+  // UI State
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("my-courses");
+  
+  // Read courseId from URL search params (e.g., /courses?courseId=xxx&assignmentId=yyy)
+  const courseIdFromUrl = searchParams.get('courseId');
+  const [viewingCourseId, setViewingCourseId] = useState<string | null>(courseIdFromUrl); // <--- NEW STATE FOR NAVIGATION
+  
+  // Pagination State
+  const ITEMS_PER_PAGE = 9;
+  const [currentPage, setCurrentPage] = useState(1);
+  
+  // Enrollment State
+  const [selectedCourseForEnrollment, setSelectedCourseForEnrollment] = useState<Course | null>(null);
+  const [enrollmentKeyInput, setEnrollmentKeyInput] = useState("");
+  const [enrollmentError, setEnrollmentError] = useState("");
+  const [isEnrolling, setIsEnrolling] = useState(false);
+  const [isRequestingKey, setIsRequestingKey] = useState(false);
+  const [keyRequestSent, setKeyRequestSent] = useState(false);
+
+  // Profile Setup State
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [programmeSearch, setProgrammeSearch] = useState("");
+  const [selectedProgrammeObj, setSelectedProgrammeObj] = useState<{faculty: string, programme: string} | null>(null);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // --- 1. Initial Load & Checks ---
+  useEffect(() => {
+    if (!profile) return;
+    if (!profile.faculty || !profile.programme) {
+      setShowProfileSetup(true);
+      fetchProgrammeOptions();
+    } else {
+      fetchData();
+    }
+  }, [profile]);
+
+  // Sync URL courseId param with viewingCourseId state
+  useEffect(() => {
+    const urlCourseId = searchParams.get('courseId');
+    if (urlCourseId && urlCourseId !== viewingCourseId) {
+      setViewingCourseId(urlCourseId);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm]);
+
+  // --- 2. Data Fetching ---
+
+  const fetchProgrammeOptions = async () => {
+    const { data } = await supabase.from('courses').select('faculty, programme');
+    if (data) {
+      const unique = data.filter((v, i, a) => a.findIndex(t => (t.programme === v.programme)) === i);
+      setProgrammeOptions(unique);
+    }
+  };
+
+  const fetchData = async () => {
+    setIsLoading(true);
+    try {
+      // A. Fetch Enrolled
+      const { data: enrollmentData } = await supabase
+        .from('enrollments')
+        .select(`course_id, courses (*)`)
+        .eq('user_id', profile?.id);
+      
+      const myCourses = enrollmentData?.map((e: any) => e.courses) || [];
+      setEnrolledCourses(myCourses);
+
+      // B. Fetch Available
+      const { data: allCourses } = await supabase
+        .from('courses')
+        .select('*')
+        .neq('status', 'unavailable');
+
+      if (allCourses && profile) {
+        const enrolledIds = new Set(myCourses.map(c => c.id));
+        
+        const filtered = allCourses.filter((course: Course) => {
+          if (enrolledIds.has(course.id)) return false; 
+          
+          const isCommonCore = course.course_type === 'common_core' && course.faculty === profile.faculty;
+          const isDisciplineCore = course.course_type === 'discipline_core' && course.programme === profile.programme;
+          const isElectiveOpen = course.course_type === 'elective_open';
+          const isElectiveCore = course.course_type === 'elective_core' && course.faculty === profile.faculty;
+
+          return isCommonCore || isDisciplineCore || isElectiveOpen || isElectiveCore;
+        });
+
+        setAvailableCourses(filtered);
+      }
+    } catch (error) {
+      console.error("Error fetching courses", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- 3. Actions ---
+
+  const handleProfileSave = async () => {
+    if (!selectedProgrammeObj) return;
+    setIsSavingProfile(true);
+    
+    const { error } = await updateProfile({
+      faculty: selectedProgrammeObj.faculty,
+      programme: selectedProgrammeObj.programme
+    });
+
+    if (!error) {
+      setShowProfileSetup(false);
+      fetchData();
+    }
+    setIsSavingProfile(false);
+  };
+
+  const handleEnrollClick = (course: Course) => {
+    setEnrollmentError("");
+    setEnrollmentKeyInput("");
+    setKeyRequestSent(false);
+    setSelectedCourseForEnrollment(course);
+  };
+
+  const handleRequestKey = async () => {
+    if (!selectedCourseForEnrollment || !profile) return;
+    setIsRequestingKey(true);
+    
+    const { error } = await supabase.from('key_requests').insert({
+        user_id: profile.id,
+        course_id: selectedCourseForEnrollment.id,
+        status: 'pending'
+    });
+
+    if (error) {
+        setEnrollmentError("Failed to send request. You may have already requested this.");
+    } else {
+        setKeyRequestSent(true);
+    }
+    setIsRequestingKey(false);
+  };
+
+  const handleEnrollSubmit = async () => {
+    if (!selectedCourseForEnrollment || !profile) return;
+    setIsEnrolling(true);
+    setEnrollmentError("");
+
+    try {
+      const inputKey = enrollmentKeyInput.trim();
+      const actualKey = selectedCourseForEnrollment.enrollment_key?.trim();
+
+      if (!actualKey) throw new Error("System Error: Course has no key set. Contact Admin.");
+      if (inputKey !== actualKey) throw new Error("Invalid Enrollment Key.");
+
+      const { error } = await supabase.from('enrollments').insert({
+        user_id: profile.id,
+        course_id: selectedCourseForEnrollment.id
+      });
+
+      if (error) {
+        if (error.code === '23505') throw new Error("Already enrolled.");
+        throw error;
+      }
+
+      setSelectedCourseForEnrollment(null);
+      setActiveTab("my-courses");
+      fetchData(); 
+      
+    } catch (error: any) {
+      setEnrollmentError(error.message || "Failed to enroll");
+    } finally {
+      setIsEnrolling(false);
+    }
+  };
+
+  // --- 4. Render Logic ---
+
+  // *** IF VIEWING A COURSE, SHOW THE TEAMS VIEW ***
+  if (viewingCourseId) {
+    return <CoursePage courseId={viewingCourseId} onBack={() => {
+      setViewingCourseId(null);
+      // Clear URL params when going back
+      navigate('/courses', { replace: true });
+    }} />;
+  }
+
+  const displayedAvailable = availableCourses.filter(c => 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.course_code.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalPages = Math.ceil(displayedAvailable.length / ITEMS_PER_PAGE);
+  const paginatedCourses = displayedAvailable.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE, 
+    currentPage * ITEMS_PER_PAGE
+  );
+
+  const filteredProgrammes = programmeOptions.filter(p => 
+    p.programme.toLowerCase().includes(programmeSearch.toLowerCase())
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">My Studies</h1>
+        <p className="text-muted-foreground">
+          {profile?.programme || "Manage your courses"}
+        </p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="my-courses" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Enrolled
+            <Badge variant="secondary" className="ml-1">{enrolledCourses.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="browse" className="gap-2">
+            <Search className="h-4 w-4" />
+            Browse Available
+          </TabsTrigger>
+        </TabsList>
+
+        {/* --- TAB: MY COURSES --- */}
+        <TabsContent value="my-courses" className="space-y-4">
+          {isLoading ? (
+            <div className="flex justify-center py-8"><Loader2 className="animate-spin text-primary" /></div>
+          ) : enrolledCourses.length === 0 ? (
+            <div className="text-center py-12 border rounded-lg bg-muted/20 border-dashed">
+              <GraduationCap className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium">No courses yet</h3>
+              <p className="text-muted-foreground mb-4">Start your semester by enrolling in courses.</p>
+              <Button onClick={() => setActiveTab("browse")}>Browse Courses</Button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {enrolledCourses.map(course => (
+                <Card 
+                    key={course.id} 
+                    className="hover:shadow-md transition-all border-l-4 border-l-green-500 cursor-pointer"
+                    onClick={() => setViewingCourseId(course.id)} // Click card to open
+                >
+                  <CardHeader>
+                    <div className="flex justify-between items-start">
+                      <Badge variant="outline">{course.course_code}</Badge>
+                      <Badge className="bg-green-100 text-green-800 hover:bg-green-200 border-none">Enrolled</Badge>
+                    </div>
+                    <CardTitle className="mt-2 line-clamp-1">{course.name}</CardTitle>
+                    <CardDescription className="line-clamp-1">{course.chinese_name}</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                     <div className="text-xs text-muted-foreground space-y-2 mb-4">
+                        <div className="flex items-center gap-2">
+                           <Clock className="h-3 w-3" /> {course.credit_hours} Credits
+                        </div>
+                        <div className="flex items-center gap-2">
+                           <Users className="h-3 w-3" /> {course.faculty}
+                        </div>
+                     </div>
+                     <Button className="w-full" onClick={(e: React.MouseEvent) => {
+                         e.stopPropagation(); // Prevent double triggering
+                         setViewingCourseId(course.id);
+                     }}>
+                        Go to Course <ArrowRightCircle className="ml-2 h-4 w-4" />
+                     </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* --- TAB: BROWSE (With Pagination) --- */}
+        <TabsContent value="browse" className="space-y-6">
+          <div className="flex gap-4">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search by name or code..." 
+                className="pl-8"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[400px]">
+            {paginatedCourses.map(course => (
+              <Card key={course.id} className="flex flex-col hover:border-primary/50 transition-colors">
+                <CardHeader>
+                  <div className="flex justify-between items-start">
+                    <Badge variant="outline">{course.course_code}</Badge>
+                    <Badge variant={course.course_type === 'common_core' ? 'secondary' : 'outline'}>
+                      {course.course_type?.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                  <CardTitle className="mt-2 text-lg line-clamp-1" title={course.name}>{course.name}</CardTitle>
+                  <CardDescription className="font-noto-sans-sc line-clamp-1">{course.chinese_name}</CardDescription>
+                </CardHeader>
+                <CardContent className="mt-auto">
+                   <div className="flex justify-between items-center text-sm text-muted-foreground mb-4">
+                      <span>{course.semester}</span>
+                      <span>{course.credit_hours} Credits</span>
+                   </div>
+                   <Button className="w-full" onClick={() => handleEnrollClick(course)}>
+                      <Plus className="h-4 w-4 mr-2" /> Enroll
+                   </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {/* Pagination Controls */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-8">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* --- DIALOG: PROFILE SETUP --- */}
+      <Dialog open={showProfileSetup} onOpenChange={() => {}}>
+        <DialogContent className="max-w-md" onInteractOutside={(e: any) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Welcome! Select your Programme</DialogTitle>
+            <DialogDescription>
+              Please search and select your current study programme to continue.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-2">
+            <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder="Search programmes..." 
+                    className="pl-8"
+                    value={programmeSearch}
+                    onChange={(e) => setProgrammeSearch(e.target.value)}
+                />
+            </div>
+            
+            <div className="border rounded-md h-[200px] overflow-y-auto p-1 bg-muted/10">
+                {filteredProgrammes.length === 0 ? (
+                    <div className="h-full flex items-center justify-center text-muted-foreground text-sm">
+                        No programmes found.
+                    </div>
+                ) : (
+                    filteredProgrammes.map((opt, idx) => (
+                        <button
+                            key={idx}
+                            onClick={() => setSelectedProgrammeObj(opt)}
+                            className={`w-full text-left px-3 py-2 text-sm rounded-sm transition-colors ${
+                                selectedProgrammeObj?.programme === opt.programme 
+                                ? 'bg-primary text-primary-foreground' 
+                                : 'hover:bg-accent'
+                            }`}
+                        >
+                            {opt.programme}
+                        </button>
+                    ))
+                )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={handleProfileSave} disabled={!selectedProgrammeObj || isSavingProfile}>
+              {isSavingProfile && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+              Confirm Selection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- DIALOG: ENROLLMENT KEY --- */}
+      <Dialog 
+        open={!!selectedCourseForEnrollment} 
+        onOpenChange={(open: boolean) => !open && setSelectedCourseForEnrollment(null)}
+      >
+        <DialogContent className="max-w-sm sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enrollment Key Required</DialogTitle>
+            <DialogDescription>
+              To join <b>{selectedCourseForEnrollment?.name}</b>, enter the key provided by your lecturer.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {enrollmentError && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{enrollmentError}</AlertDescription>
+              </Alert>
+            )}
+
+            {keyRequestSent && (
+                <Alert className="bg-green-50 text-green-800 border-green-200">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>Request sent! Admin will review shortly.</AlertDescription>
+                </Alert>
+            )}
+            
+            <div className="space-y-2">
+              <Label>Enrollment Key</Label>
+              <div className="relative">
+                <Key className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                  placeholder="e.g. AbC123Xy" 
+                  className="pl-9 font-mono"
+                  value={enrollmentKeyInput}
+                  onChange={(e) => setEnrollmentKeyInput(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">Or</span></div>
+            </div>
+
+            <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={handleRequestKey}
+                disabled={isRequestingKey || keyRequestSent}
+            >
+                {isRequestingKey ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Send className="mr-2 h-4 w-4" />}
+                {keyRequestSent ? "Request Sent" : "Request Key from Admin"}
+            </Button>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="ghost" onClick={() => setSelectedCourseForEnrollment(null)}>Cancel</Button>
+            <Button onClick={handleEnrollSubmit} disabled={isEnrolling || !enrollmentKeyInput}>
+              {isEnrolling && <Loader2 className="animate-spin mr-2 h-4 w-4" />}
+              Enroll Now
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

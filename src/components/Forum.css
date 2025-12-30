@@ -1,0 +1,78 @@
+.forum-root {
+  color: #0f172a;
+  background-color: #f9fafb;
+}
+
+.dark .forum-root {
+  color: #f8fafc;
+  background-color: #000000 !important;
+}
+
+/* Force Card dark mode background */
+.dark .forum-root [data-slot="card"] {
+  background-color: #18181b !important;
+  border-color: #27272a !important;
+}
+
+.dark .forum-root [data-slot="card"] * {
+  color: #f8fafc;
+}
+
+.forum-filter-button {
+  color: #4b5563;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.forum-filter-button.active,
+.forum-filter-button.active * {
+  color: #111827 !important;
+}
+
+.dark .forum-filter-button {
+  color: #d1d5db;
+}
+
+.dark .forum-filter-button.active,
+.dark .forum-filter-button.active * {
+  color: #111827 !important;
+}
+
+.forum-course-button {
+  color: #4b5563;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.forum-course-button.active,
+.forum-course-button.active * {
+  color: #0b2f94 !important;
+}
+
+.dark .forum-course-button {
+  color: #d1d5db;
+}
+
+.dark .forum-course-button.active,
+.dark .forum-course-button.active * {
+  color: #1721b8 !important;
+}
+
+.dark .forum-root .text-gray-900,
+.dark .forum-root .text-gray-800 {
+  color: #f8fafc !important;
+}
+
+.dark .forum-root .text-gray-700,
+.dark .forum-root .text-gray-600,
+.dark .forum-root .text-gray-500 {
+  color: #e5e7eb !important;
+}
+
+.dark .forum-root .text-gray-400,
+.dark .forum-root .text-gray-300 {
+  color: #cbd5f5 !important;
+}
+
+.dark .forum-root .text-gray-200,
+.dark .forum-root .text-gray-100 {
+  color: #f1f5f9 !important;
+}
