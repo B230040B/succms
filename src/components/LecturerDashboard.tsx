@@ -6,6 +6,7 @@ import { Button } from "./ui/button";
 import { OnlineActivity } from "./SocialWidgets";
 import { AIRecommendations } from "./AIRecommendations";
 import { Stories } from "./Stories";
+import { useAuth } from "@/contexts/AuthContext";
 import { 
   BookOpen, 
   Users, 
@@ -28,6 +29,7 @@ import {
 } from "lucide-react";
 
 export function LecturerDashboard() {
+  const { profile } = useAuth();
   const myCourses = [
     {
       id: 1,
@@ -272,18 +274,8 @@ export function LecturerDashboard() {
       {/* Welcome Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1>Welcome, Dr. Sarah Chen</h1>
+          <h1>Welcome, {profile?.full_name || 'Lecturer'}</h1>
           <p className="text-muted-foreground">Manage your courses and track student progress</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Badge className="bg-purple-100 text-purple-800">
-            <Brain className="h-3 w-3 mr-1" />
-            AI Teaching Insights
-          </Badge>
-          <Button>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Course
-          </Button>
         </div>
       </div>
 
@@ -527,40 +519,6 @@ export function LecturerDashboard() {
         <div className="space-y-6">
           {/* Online Activity */}
           <OnlineActivity userRole="lecturer" />
-
-          {/* AI Insights */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Brain className="h-5 w-5 text-purple-600" />
-                AI Teaching Insights
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {aiInsights.map((insight, index) => (
-                <div key={index} className="p-3 border rounded-lg space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-sm">{insight.title}</h4>
-                    <Badge variant="secondary" className="text-xs">
-                      {insight.confidence}%
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-muted-foreground">{insight.description}</p>
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline" className="text-xs">
-                      {insight.course}
-                    </Badge>
-                    {insight.actionable && (
-                      <Button size="sm" variant="outline" className="text-xs">
-                        <Target className="h-3 w-3 mr-1" />
-                        Take Action
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
 
           {/* Upcoming Classes */}
           <Card>

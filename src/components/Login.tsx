@@ -32,25 +32,28 @@ export function Login() {
     e.preventDefault();
     setIsLoading(true);
     setError("");
-
+    setInfo("");
+    
     const { error: signInError } = await signIn(loginEmail, loginPassword);
-
+    
     if (signInError) {
       setError(signInError.message);
     }
     setIsLoading(false);
   };
 
-  const handleSignUp = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
+    setInfo("");
 
     if (signupPassword.length < 6) {
       setError("Password must be at least 6 characters.");
       setIsLoading(false);
       return;
     }
+    
     if (signupPassword !== signupConfirmPassword) {
       setError("Passwords do not match.");
       setIsLoading(false);
@@ -71,33 +74,54 @@ export function Login() {
     } else {
       setInfo("Account created! Please sign in.");
       setAuthMode('signin');
-      setLoginEmail(signupEmail); // Auto-fill login email
+      setLoginEmail(signupEmail);
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1 text-center">
+    // 1. MAIN CONTAINER
+    <div className="relative flex items-center justify-center min-h-screen overflow-hidden bg-gray-900">
+      
+      {/* 2. BACKGROUND IMAGE LAYER (Lighter Blur) */}
+      <div 
+        className="absolute inset-0 z-0"
+        style={{ 
+          backgroundImage: `url('/loginBackground.jpg')`,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          // REDUCED BLUR: changed from 8px to 3px
+          filter: 'blur(2px)', 
+          transform: 'scale(1.02)'
+        }}
+      />
+
+      <div className="absolute inset-0 z-0 bg-white/50" />
+
+      {/* 4. LOGIN CARD LAYER */}
+      <Card className="w-full max-w-md shadow-2xl border-0 bg-white/95 dark:bg-zinc-900/90 backdrop-blur-md relative z-10 animate-in fade-in zoom-in-95 duration-500">
+        <CardHeader className="space-y-1 text-center pb-2">
           <div className="flex justify-center mb-4">
-            <div className="p-3 bg-blue-100 dark:bg-blue-900 rounded-full">
-              <BookOpen className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            <div className="p-3 bg-blue-600 rounded-full shadow-lg shadow-blue-600/20">
+              <BookOpen className="h-8 w-8 text-white" />
             </div>
           </div>
-          <CardTitle className="text-2xl font-bold">SUCCMS Learn 4.0</CardTitle>
-          <CardDescription>Enter your credentials to access the portal</CardDescription>
+          <CardTitle className="text-2xl font-bold tracking-tight">
+            SUCCMS Learn
+          </CardTitle>
+          <CardDescription>
+            {authMode === 'signin' 
+              ? "Enter your credentials to access your account" 
+              : "Create an account to get started"}
+          </CardDescription>
         </CardHeader>
         
         <CardContent>
-          <Tabs 
-            value={authMode} 
-            onValueChange={(value: string) => setAuthMode(value as 'signin' | 'signup')} 
-            className="w-full"
-          >
-            <TabsList className="grid w-full grid-cols-2 mb-4">
+          <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as 'signin' | 'signup')} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
               <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Create Account</TabsTrigger>
+              <TabsTrigger value="signup">Sign Up</TabsTrigger>
             </TabsList>
 
             {error && (
@@ -106,78 +130,127 @@ export function Login() {
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
             {info && (
-              <Alert className="mb-4 bg-green-50 border-green-500 text-green-700">
+              <Alert className="mb-4 bg-green-50 text-green-900 border-green-200">
+                <AlertCircle className="h-4 w-4" />
                 <AlertDescription>{info}</AlertDescription>
               </Alert>
             )}
 
-            {/* SIGN IN FORM */}
             <TabsContent value="signin">
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="login-email">Email</Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input 
-                    id="login-email" 
-                    type="email"
-                    placeholder="student@example.com" 
+                    id="email" 
+                    type="email" 
+                    placeholder="m@example.com" 
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
                     required 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="login-password">Password</Label>
+                  <Label htmlFor="password">Password</Label>
                   <Input 
-                    id="login-password" 
+                    id="password" 
                     type="password" 
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     required 
                   />
                 </div>
-                <Button className="w-full" type="submit" disabled={isLoading}>
+                <Button className="w-full font-bold shadow-sm" type="submit" disabled={isLoading}>
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : (
-                    <div className="flex items-center gap-2">Sign In <ArrowRight className="h-4 w-4" /></div>
+                    <>
+                      Sign In <ArrowRight className="ml-2 h-4 w-4" />
+                    </>
                   )}
                 </Button>
               </form>
             </TabsContent>
 
-            {/* SIGN UP FORM */}
             <TabsContent value="signup">
-              <form onSubmit={handleSignUp} className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input type="email" value={signupEmail} onChange={(e) => setSignupEmail(e.target.value)} placeholder="you@example.com" required />
-                </div>
+              <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
                   <Label>Full Name</Label>
-                  <Input value={signupFullName} onChange={(e) => setSignupFullName(e.target.value)} placeholder="e.g. Tan Chee Seng" required />
+                  <Input 
+                    placeholder="John Doe" 
+                    value={signupFullName} 
+                    onChange={(e) => setSignupFullName(e.target.value)} 
+                    required 
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label>Username</Label>
-                  <Input value={signupUsername} onChange={(e) => setSignupUsername(e.target.value)} placeholder="e.g. JasonTan2711" required />
+                  <Input 
+                    placeholder="johndoe" 
+                    value={signupUsername} 
+                    onChange={(e) => setSignupUsername(e.target.value)} 
+                    required 
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Email</Label>
+                  <Input 
+                    type="email" 
+                    placeholder="m@example.com" 
+                    value={signupEmail} 
+                    onChange={(e) => setSignupEmail(e.target.value)} 
+                    required 
+                  />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Password</Label>
-                    <Input type="password" value={signupPassword} onChange={(e) => setSignupPassword(e.target.value)} required />
+                    <Input 
+                      type="password" 
+                      value={signupPassword} 
+                      onChange={(e) => setSignupPassword(e.target.value)} 
+                      required 
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Confirm</Label>
-                    <Input type="password" value={signupConfirmPassword} onChange={(e) => setSignupConfirmPassword(e.target.value)} required />
+                    <Input 
+                      type="password" 
+                      value={signupConfirmPassword} 
+                      onChange={(e) => setSignupConfirmPassword(e.target.value)} 
+                      required 
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label>I am a...</Label>
                   <div className="grid grid-cols-3 gap-2">
-                    <Button type="button" variant={signupRole === 'student' ? 'default' : 'outline'} onClick={() => setSignupRole('student')}>Student</Button>
-                    <Button type="button" variant={signupRole === 'lecturer' ? 'default' : 'outline'} onClick={() => setSignupRole('lecturer')}>Lecturer</Button>
-                    <Button type="button" variant={signupRole === 'admin' ? 'default' : 'outline'} onClick={() => setSignupRole('admin')}>Admin</Button>
+                    <Button 
+                      type="button" 
+                      variant={signupRole === 'student' ? 'default' : 'outline'} 
+                      onClick={() => setSignupRole('student')}
+                      className={signupRole === 'student' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                    >
+                      Student
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant={signupRole === 'lecturer' ? 'default' : 'outline'} 
+                      onClick={() => setSignupRole('lecturer')}
+                      className={signupRole === 'lecturer' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                    >
+                      Lecturer
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant={signupRole === 'admin' ? 'default' : 'outline'} 
+                      onClick={() => setSignupRole('admin')}
+                      className={signupRole === 'admin' ? 'bg-blue-600 hover:bg-blue-700' : ''}
+                    >
+                      Admin
+                    </Button>
                   </div>
                 </div>
-                <Button className="w-full" type="submit" disabled={isLoading}>
+                <Button className="w-full font-bold shadow-sm" type="submit" disabled={isLoading}>
                   {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : "Create Account"}
                 </Button>
               </form>
