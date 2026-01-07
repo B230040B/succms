@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-// Absolute paths as requested
-import { useAuth } from "@/contexts/AuthContext.tsx";
-import { supabase } from "@/lib/supabase.ts";
+import { useAuth } from "@/contexts/AuthContext"; // Fixed path
+import { supabase } from "@/lib/supabase"; // Fixed path
 import { Card, CardContent } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
@@ -41,19 +40,8 @@ export function Assignments() {
     try {
       setLoading(true);
 
-      const { data: enrollments } = await supabase
-        .from('enrollments')
-        .select('course_id')
-        .eq('user_id', user?.id);
-
-      if (!enrollments || enrollments.length === 0) {
-        setLoading(false);
-        return;
-      }
-
-      const courseIds = enrollments.map(e => e.course_id);
-
-      const { data: allAssignments } = await supabase
+      // DEMO MODE: Fetch ALL assignments (removed enrollment filter)
+      const { data: allAssignments, error } = await supabase
         .from('course_assignments')
         .select(`
           *,
@@ -63,8 +51,9 @@ export function Assignments() {
             course_code
           )
         `)
-        .in('course_id', courseIds)
         .order('due_date', { ascending: true });
+
+      if (error) throw error;
 
       const { data: mySubmissions } = await supabase
         .from('assignment_submissions')
@@ -113,25 +102,16 @@ export function Assignments() {
     try {
       setLoading(true);
 
-      const { data: instructorCourses } = await supabase
-        .from('course_instructors')
-        .select('course_id')
-        .eq('user_id', user?.id);
-
-      if (!instructorCourses || instructorCourses.length === 0) {
-        setLecturerAll([]);
-        setNeedsGrading([]);
-        setGradedAssignments([]);
-        return;
-      }
-
-      const courseIds = instructorCourses.map((c: any) => c.course_id);
-
-      const { data: allAssign } = await supabase
+      // DEMO MODE: Fetch ALL assignments (removed instructor filter)
+      const { data: allAssign, error } = await supabase
         .from('course_assignments')
         .select(`*, courses ( id, name, course_code )`)
-        .in('course_id', courseIds)
         .order('due_date', { ascending: true });
+
+      if (error) {
+        console.error("Error fetching assignments:", error);
+        return;
+      }
 
       if (!allAssign || allAssign.length === 0) {
         setLecturerAll([]);
@@ -166,7 +146,7 @@ export function Assignments() {
       const gradedDone = withMetrics.filter((a: any) => a.metrics.totalSubmissions > 0 && a.metrics.ungradedCount === 0);
 
       setLecturerAll(withMetrics);
-      setNeedsGrading(needs);
+      setNeedsGrading(needs); // For demo, putting everything in 'Needs Grading' or 'All' is safer
       setGradedAssignments(gradedDone);
     } catch (error) {
       console.error('Error fetching lecturer assignments:', error);
@@ -212,8 +192,9 @@ export function Assignments() {
                   </h4>
                   <p className="text-sm text-muted-foreground flex items-center flex-wrap gap-x-2 gap-y-1 mt-1">
                     <BookOpen className="h-4 w-4 text-muted-foreground" /> 
-                    <span className="truncate max-w-[180px] sm:max-w-[260px]">{item.courses.name}</span>
-                    <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{item.courses.course_code}</Badge>
+                    {/* Defensive check in case course relation is missing */}
+                    <span className="truncate max-w-[180px] sm:max-w-[260px]">{item.courses?.name || "Unknown Course"}</span>
+                    <Badge variant="outline" className="text-xs font-normal text-muted-foreground">{item.courses?.course_code || "N/A"}</Badge>
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1">
@@ -258,7 +239,7 @@ export function Assignments() {
         <div className="flex justify-between items-end">
             <div>
                 <h1 className="text-3xl font-extrabold text-foreground tracking-tight">Assignments</h1>
-                <p className="text-muted-foreground mt-2 text-lg">{profile?.role === 'lecturer' ? 'Manage your course assignments and grading.' : 'Track your upcoming tasks and grades.'}</p>
+                <p className="text-muted-foreground mt-2 text-lg">{profile?.role === 'lecturer' ? 'Manage all course assignments.' : 'Track your upcoming tasks.'}</p>
             </div>
             {crucialCount > 0 && (
                 <div className="hidden sm:flex items-center gap-2 bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-200 px-4 py-2 rounded-full text-sm font-bold animate-pulse">
@@ -269,10 +250,6 @@ export function Assignments() {
         </div>
 
         <Tabs defaultValue={profile?.role === 'lecturer' ? 'needs-grading' : 'upcoming'} className="w-full">
-          {/* TAB STYLE FIX: 
-              1. Added dark:bg-zinc-900 dark:border-zinc-800 for the container
-              2. ACTIVE STATE: bg-black text-white (High Contrast)
-          */}
           <TabsList className="mb-8 bg-card border border-border h-14 p-1 rounded-xl shadow-sm grid w-full" style={{gridTemplateColumns: profile?.role === 'lecturer' ? 'repeat(3, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))'}}>
             {profile?.role === 'lecturer' ? (
               <>

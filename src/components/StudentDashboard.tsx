@@ -7,21 +7,93 @@ import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Button } from "./ui/button";
 import { OnlineActivity, PeerBenchmarking, SocialActivityFeed, StudyGroups } from "./SocialWidgets";
-// Removed old AIRecommendations import since we are inlining the real one
 import { Stories } from "./Stories";
 import { AdvertisementPanel } from "./AdvertisementPanel";
 import { 
   BookOpen, Clock, Calendar, AlertCircle, TrendingUp, Users, FileText, 
-  Bell, Brain, Zap, Sparkles, BrainCircuit, Youtube, PlayCircle, ExternalLink, ArrowRight 
+  Bell, Brain, Zap, Sparkles, BrainCircuit, Youtube, PlayCircle, ExternalLink, ArrowRight, Music 
 } from "lucide-react";
 
-// Types for AI Data
+// --- 1. THE AI KNOWLEDGE BASE (Real Links) ---
+// This acts as the "brain" of the AI, mapping topics to real-world resources.
+const KNOWLEDGE_BASE = [
+  // Database Systems Resources
+  {
+    id: 'db-1',
+    title: 'Complete Guide to Database Normalization (1NF-3NF)',
+    type: 'video',
+    url: 'https://www.youtube.com/watch?v=rBPQ5fg_kiY',
+    source: 'YouTube',
+    tags: ['Database', 'SQL', 'CS301', 'Data']
+  },
+  {
+    id: 'db-2',
+    title: 'SQL Indexing and Performance Tuning',
+    type: 'article',
+    url: 'https://use-the-index-luke.com/',
+    source: 'Use The Index Luke',
+    tags: ['Database', 'Performance', 'CS301']
+  },
+  // Software Engineering / Algorithms
+  {
+    id: 'se-1',
+    title: 'Agile Methodology Crash Course',
+    type: 'video',
+    url: 'https://www.youtube.com/watch?v=8bmS5awqzc0',
+    source: 'YouTube',
+    tags: ['Software', 'Agile', 'CS410', 'Project']
+  },
+  {
+    id: 'algo-1',
+    title: 'Data Structures & Algorithms - Full Course',
+    type: 'video',
+    url: 'https://www.youtube.com/watch?v=8hly31xKli0',
+    source: 'FreeCodeCamp',
+    tags: ['Algorithms', 'Data Structures', 'CS205', 'Code']
+  },
+  // Web Development
+  {
+    id: 'web-1',
+    title: 'React Hooks: The Complete Guide',
+    type: 'article',
+    url: 'https://react.dev/reference/react',
+    source: 'React Docs',
+    tags: ['Web', 'React', 'Frontend', 'CS405']
+  },
+  // General Productivity (Always relevant)
+  {
+    id: 'prod-1',
+    title: 'Atomic Habits: How to Get 1% Better Every Day',
+    type: 'productivity',
+    url: 'https://www.youtube.com/watch?v=PZ7lDrwYdZc',
+    source: 'James Clear',
+    tags: ['Productivity', 'General']
+  },
+  {
+    id: 'prod-2',
+    title: 'Deep Work: Rules for Focused Success',
+    type: 'productivity',
+    url: 'https://www.youtube.com/watch?v=d66815uVerk',
+    source: 'Cal Newport',
+    tags: ['Productivity', 'Focus']
+  },
+  {
+    id: 'music-1',
+    title: 'Lofi Girl - Beats to Relax/Study To',
+    type: 'music',
+    url: 'https://www.youtube.com/watch?v=jfKfPfyJRdk',
+    source: 'Lofi Girl Live',
+    tags: ['Music', 'Focus']
+  }
+];
+
+// Types
 interface Recommendation {
   id: string;
   title: string;
-  type: 'video' | 'article' | 'documentation' | 'productivity';
+  type: string;
   url: string;
-  topic: string;
+  source?: string;
   reason?: string;
 }
 
@@ -35,7 +107,7 @@ interface CourseActivity {
 export function StudentDashboard() {
   const { user, profile } = useAuth();
   
-  // 1. AI Engine State
+  // State
   const [aiData, setAiData] = useState<{
     recentCourses: CourseActivity[];
     studyMaterials: Recommendation[];
@@ -43,50 +115,44 @@ export function StudentDashboard() {
   }>({ recentCourses: [], studyMaterials: [], motivation: [] });
   const [isLoadingAi, setIsLoadingAi] = useState(true);
 
-  // 2. Existing Mock Data (Preserved for visual stability)
+  // Mock Enrolled Courses (In a real app, this comes from DB)
+  // We use these names to query the KNOWLEDGE_BASE
   const enrolledCourses = [
     { id: 1, code: "CS301", name: "Database Systems", lecturer: "Dr. Sarah Chen", progress: 75, nextClass: "Today, 2:00 PM", room: "Lab 204", assignments: 2, status: "active", grade: "A-" },
     { id: 2, code: "CS205", name: "Data Structures", lecturer: "Prof. Michael Roberts", progress: 60, nextClass: "Tomorrow, 10:00 AM", room: "Room 301", assignments: 1, status: "active", grade: "B+" },
     { id: 3, code: "CS410", name: "Software Eng.", lecturer: "Dr. Elena Rodriguez", progress: 45, nextClass: "Wed, 9:00 AM", room: "Room 105", assignments: 3, status: "active", grade: "B" }
   ];
 
-  // 3. Load Real AI Data
   useEffect(() => {
-    if (user) loadAiData();
+    if (user) generateSmartRecommendations();
   }, [user]);
 
-  const loadAiData = async () => {
+  const generateSmartRecommendations = async () => {
+    setIsLoadingAi(true);
     try {
-      if (!user) return;
-      
-      // A. Fetch Resources
-      const { data: allResources } = await supabase.from('ai_resources').select('*');
-      
-      // B. Fetch Activity Log (for "Jump Back In")
-      const { data: activityLog } = await supabase
-        .from('user_activity_log')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
+      // 1. Extract Keywords from User's Courses
+      // We look at the course names and codes the user is actually enrolled in
+      const userInterests = enrolledCourses.flatMap(c => [
+        c.code, 
+        ...c.name.split(' ') // Split "Database Systems" into ["Database", "Systems"]
+      ]);
 
-      // --- AI ALGORITHM (Client-Side Simulation) ---
-      
-      // 1. Filter Study Materials based on enrolled course codes (CS301, CS205)
-      // In a real app, we'd match these strictly. For demo, we match keywords.
-      const activeTopics = ['Database', 'Algorithms', 'Web', 'Software'];
-      
-      const relevantMaterials = (allResources || []).filter(r => 
-        activeTopics.some(topic => r.topic.includes(topic)) && r.type !== 'productivity'
-      ).map(r => ({
-        ...r,
-        reason: `Recommended for ${r.topic}`
-      })).slice(0, 3);
+      // 2. Filter the Knowledge Base
+      // The AI "scans" the database for matching tags
+      const relevantMaterials = KNOWLEDGE_BASE.filter(resource => {
+        if (resource.type === 'productivity' || resource.type === 'music') return false; // Handle these separately
+        return resource.tags.some(tag => userInterests.includes(tag));
+      }).map(res => ({
+        ...res,
+        reason: `Recommended for ${res.tags.find(t => userInterests.includes(t)) || 'your course'}`
+      })).slice(0, 3); // Top 3 matches
 
-      // 2. Productivity Picks
-      const motivationPicks = (allResources || []).filter(r => r.type === 'productivity').slice(0, 2);
+      // 3. Get Productivity/Motivation picks
+      const motivationPicks = KNOWLEDGE_BASE.filter(r => 
+        r.type === 'productivity' || r.type === 'music'
+      ).sort(() => 0.5 - Math.random()).slice(0, 2); // Randomize slightly for variety
 
-      // 3. Jump Back In (Mix of real log + mock fallback)
+      // 4. Construct "Jump Back In" (Simulated from recent logs)
       const jumpBackIn: CourseActivity[] = [
         { courseCode: 'CS301', courseName: 'Database Systems', lastAccessed: new Date(), progress: 75 },
         { courseCode: 'CS205', courseName: 'Data Structures', lastAccessed: new Date(Date.now() - 86400000), progress: 60 }
@@ -97,8 +163,9 @@ export function StudentDashboard() {
         studyMaterials: relevantMaterials,
         motivation: motivationPicks
       });
+
     } catch (err) {
-      console.error("AI Load Error:", err);
+      console.error("AI Engine Error:", err);
     } finally {
       setIsLoadingAi(false);
     }
@@ -120,23 +187,42 @@ export function StudentDashboard() {
     }
   };
 
+  // Helper to render the correct icon for resources
+  const getResourceIcon = (type: string) => {
+    switch(type) {
+        case 'video': return <Youtube className="h-4 w-4" />;
+        case 'music': return <Music className="h-4 w-4" />;
+        case 'article': return <BookOpen className="h-4 w-4" />;
+        default: return <PlayCircle className="h-4 w-4" />;
+    }
+  };
+
+  const getResourceColor = (type: string) => {
+      switch(type) {
+          case 'video': return 'bg-red-100 text-red-600';
+          case 'music': return 'bg-purple-100 text-purple-600';
+          case 'article': return 'bg-blue-100 text-blue-600';
+          default: return 'bg-amber-100 text-amber-600';
+      }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       {/* Welcome Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Welcome back, {profile?.full_name?.split(" ")[0]}!</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Welcome back, {profile?.full_name?.split(" ")[0] || 'Scholar'}!</h1>
           <p className="text-muted-foreground flex items-center gap-2 mt-1">
             <Sparkles className="h-4 w-4 text-purple-500" />
-            AI Assistant: "I've curated {aiData.studyMaterials.length} new resources for your session."
+            AI Assistant: "I've found {aiData.studyMaterials.length} relevant resources based on your enrollment."
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors cursor-pointer">
+          <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-200 transition-colors cursor-pointer px-3 py-1">
             <Brain className="h-3 w-3 mr-1" />
             AI Study Plan Ready
           </Badge>
-          <Badge className="bg-green-100 text-green-800">
+          <Badge className="bg-green-100 text-green-800 px-3 py-1">
             <Zap className="h-3 w-3 mr-1" />
             12-day streak
           </Badge>
@@ -144,7 +230,7 @@ export function StudentDashboard() {
       </div>
 
       {/* Stories Feature */}
-      <Card className="overflow-hidden bg-gradient-to-r from-gray-50 to-white dark:from-zinc-900 dark:to-zinc-950">
+      <Card className="overflow-hidden bg-gradient-to-r from-gray-50 to-white dark:from-zinc-900 dark:to-zinc-950 border-dashed">
         <CardContent className="p-6">
           <Stories 
              currentUserName={profile?.full_name || "Your Story"}
@@ -164,7 +250,7 @@ export function StudentDashboard() {
               <Clock className="h-5 w-5 text-blue-500" />
               Jump Back In
             </CardTitle>
-            <CardDescription>Recent active courses</CardDescription>
+            <CardDescription>Pick up where you left off</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {aiData.recentCourses.map(course => (
@@ -184,27 +270,40 @@ export function StudentDashboard() {
           </CardContent>
         </Card>
 
-        {/* 2. Smart Study Picks */}
+        {/* 2. Smart Study Picks (DYNAMICALLY FILTERED) */}
         <Card className="col-span-1 border-l-4 border-l-purple-500 shadow-sm hover:shadow-md transition-shadow">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <BrainCircuit className="h-5 w-5 text-purple-500" />
               Smart Study Picks
             </CardTitle>
-            <CardDescription>Recommended based on your courses</CardDescription>
+            <CardDescription>Curated external resources for you</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {aiData.studyMaterials.map(item => (
-              <a href={item.url} target="_blank" rel="noreferrer" key={item.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-colors cursor-pointer border border-transparent hover:border-purple-100">
-                <div className={`p-2 rounded-md shrink-0 ${item.type === 'video' ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                  {item.type === 'video' ? <Youtube className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+              <a 
+                href={item.url} 
+                target="_blank" 
+                rel="noreferrer" 
+                key={item.id} 
+                className="flex items-start gap-3 p-3 rounded-lg hover:bg-purple-50 dark:hover:bg-purple-900/10 transition-colors cursor-pointer border border-transparent hover:border-purple-100 group"
+              >
+                <div className={`p-2 rounded-md shrink-0 ${getResourceColor(item.type)}`}>
+                  {getResourceIcon(item.type)}
                 </div>
-                <div className="space-y-1">
-                  <p className="text-sm font-medium leading-tight">{item.title}</p>
-                  <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">{item.reason}</p>
+                <div className="flex-1 space-y-1">
+                  <p className="text-sm font-medium leading-tight group-hover:underline decoration-purple-400 underline-offset-2">{item.title}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs text-purple-600 dark:text-purple-400 font-medium">{item.reason}</p>
+                    <span className="text-[10px] text-muted-foreground">• {item.source}</span>
+                  </div>
                 </div>
+                <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </a>
             ))}
+            {aiData.studyMaterials.length === 0 && (
+                <p className="text-sm text-muted-foreground p-2">No specific recommendations found for your current courses.</p>
+            )}
           </CardContent>
         </Card>
 
@@ -218,18 +317,21 @@ export function StudentDashboard() {
             <CardDescription>Productivity boosters</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {aiData.motivation.map(video => (
-              <a href={video.url} target="_blank" rel="noreferrer" key={video.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/60 dark:hover:bg-black/20 cursor-pointer transition-all">
-                 <div className="h-10 w-10 rounded-full bg-amber-100 dark:bg-amber-900 flex items-center justify-center shrink-0">
-                    <PlayCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+            {aiData.motivation.map(item => (
+              <a href={item.url} target="_blank" rel="noreferrer" key={item.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/60 dark:hover:bg-black/20 cursor-pointer transition-all group">
+                 <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${getResourceColor(item.type)}`}>
+                    {getResourceIcon(item.type)}
                  </div>
                  <div className="flex-1">
-                    <p className="text-sm font-semibold line-clamp-1">{video.title}</p>
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{video.type}</p>
+                    <p className="text-sm font-semibold line-clamp-1 group-hover:text-amber-700">{item.title}</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">{item.source}</p>
                  </div>
                  <ExternalLink className="h-3 w-3 text-muted-foreground" />
               </a>
             ))}
+            <div className="mt-4 p-3 bg-white/50 dark:bg-black/20 rounded-lg text-xs text-center italic text-muted-foreground border">
+              "Focus is not about saying yes. It's about saying no to the hundred other good ideas."
+            </div>
           </CardContent>
         </Card>
       </div>

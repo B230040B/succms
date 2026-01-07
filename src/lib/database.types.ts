@@ -159,6 +159,9 @@ export type Database = {
           submission_text: string | null;
           submitted_at: string;
           is_late: boolean;
+          files: Array<{name: string, path: string}> | null;
+          grade: number | null;
+          feedback: string | null;
         };
         Insert: {
           id?: string;
@@ -168,6 +171,9 @@ export type Database = {
           submission_text?: string | null;
           submitted_at?: string;
           is_late?: boolean;
+          files?: Array<{name: string, path: string}> | null;
+          grade?: number | null;
+          feedback?: string | null;
         };
         Update: {
           id?: string;
@@ -177,6 +183,9 @@ export type Database = {
           submission_text?: string | null;
           submitted_at?: string;
           is_late?: boolean;
+          files?: Array<{name: string, path: string}> | null;
+          grade?: number | null;
+          feedback?: string | null;
         };
       };
       student_grades: {

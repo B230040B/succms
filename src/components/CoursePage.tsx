@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom"; // Added useSearchParams
+import { useNavigate, useSearchParams } from "react-router-dom"; 
 import { supabase } from "@/lib/supabase.ts";
 import { useAuth } from "@/contexts/AuthContext.tsx";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
@@ -41,7 +41,7 @@ const getFileIcon = (type: string) => {
 export function CoursePage({ courseId, onBack }: CoursePageProps) {
   const { user, profile } = useAuth();
   const navigate = useNavigate(); 
-  const [searchParams] = useSearchParams(); // Hook to read URL params
+  const [searchParams] = useSearchParams(); 
   
   const [activeTab, setActiveTab] = useState("posts");
   const [course, setCourse] = useState<any>(null);
@@ -107,19 +107,16 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
     fetchMaterials();
   }, [currentFolderId]); 
   
-  // --- AUTO-OPEN ASSIGNMENT FROM URL ---
   useEffect(() => {
     const assignmentIdFromUrl = searchParams.get('assignmentId');
     if (assignmentIdFromUrl && assignments.length > 0) {
         const targetAssign = assignments.find(a => a.id === assignmentIdFromUrl);
         if (targetAssign) {
             setSelectedAssignment(targetAssign);
-            setActiveTab("assignments"); // Switch tab to context
-            // Clean URL so refresh doesn't reopen it if they close it
-            // navigate(`/courses/${courseId}`, { replace: true }); 
+            setActiveTab("assignments"); 
         }
     }
-  }, [assignments, searchParams]); // Run when assignments load or URL changes
+  }, [assignments, searchParams]);
 
   useEffect(() => {
     if (selectedAssignment) {
@@ -155,8 +152,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         setCurrentFeedback(sub?.feedback || "");
     }
   }, [gradingStudentId, allSubmissions]);
-
-  // --- FETCH FUNCTIONS ---
 
   const fetchCourseDetails = async () => {
     setIsLoading(true);
@@ -218,10 +213,9 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
     setAllSubmissions(data || []);
   };
 
-  // --- ACTIONS ---
-
   const handleCreateAssignment = async () => {
     if (!newAssign.title || !newAssign.due_date) return;
+    
     const { error } = await supabase.from('course_assignments').insert({
         course_id: courseId,
         title: newAssign.title,
@@ -230,7 +224,11 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         due_date: new Date(newAssign.due_date).toISOString(),
         attachments: newAssignFiles
     });
-    if (!error) {
+
+    if (error) {
+        console.error("Error creating assignment:", error);
+        alert("Failed to create assignment");
+    } else {
         setShowNewAssignmentDialog(false);
         setNewAssign({ title: "", description: "", points: "", due_date: "" });
         setNewAssignFiles([]);
@@ -376,7 +374,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      {/* Header */}
       <div className="flex items-start justify-between border-b pb-4">
         <div>
           <Button variant="ghost" className="pl-0 mb-2 hover:bg-transparent" onClick={onBack}>
@@ -563,7 +560,6 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
         </TabsContent>
       </Tabs>
 
-      {/* --- DIALOGS --- */}
       <Dialog open={showNewAssignmentDialog} onOpenChange={(open: boolean) => setShowNewAssignmentDialog(open)}>
         <DialogContent className="max-w-2xl [&>button]:hidden">
             <DialogHeader className="flex flex-row justify-between items-center">
@@ -669,72 +665,86 @@ export function CoursePage({ courseId, onBack }: CoursePageProps) {
 
                         {(!isLecturer || gradingStudentId) && (
                             <div className="space-y-8 max-w-4xl mx-auto">
-                                {mySubmissions.find(s => s.assignment_id === selectedAssignment.id)?.grade != null && (
-                                    <div className="bg-green-50 border border-green-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-                                        <div className="flex justify-between items-start mb-3">
-                                            <h4 className="font-bold text-green-800 text-sm uppercase tracking-wider flex items-center gap-2">
-                                                <GraduationCap className="h-4 w-4"/> Graded & Returned
-                                            </h4>
-                                            <Badge variant="secondary" className="bg-white text-green-700 border-green-200">
-                                                {new Date(mySubmissions.find(s => s.assignment_id === selectedAssignment.id).submitted_at).toLocaleDateString()}
-                                            </Badge>
-                                        </div>
-                                        <div className="text-4xl font-bold text-gray-900 mb-4">
-                                            {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).grade} 
-                                            <span className="text-lg font-medium text-gray-400"> / {selectedAssignment.points}</span>
-                                        </div>
-                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback && (
-                                            <div className="bg-white p-4 rounded-lg border border-green-100 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed shadow-sm">
-                                                <span className="font-bold text-gray-900 block mb-2">Lecturer Feedback:</span>
-                                                {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-
-                                <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
-                                    <h4 className="font-bold text-gray-900 text-lg mb-4 flex items-center gap-2">
-                                        <FileText className="h-5 w-5 text-gray-500"/> Instructions
-                                    </h4>
-                                    <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{selectedAssignment.description || "No instructions provided."}</p>
-                                    
-                                    {selectedAssignment.attachments?.length > 0 && (
-                                        <div className="mt-6 grid gap-2">
-                                            {selectedAssignment.attachments.map((file: any, idx: number) => (
-                                                <a key={idx} href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 bg-white border rounded-lg hover:border-blue-300 transition-colors group shadow-sm">
-                                                    <div className="bg-blue-50 p-2 rounded mr-3 text-blue-600"><FileText className="h-4 w-4"/></div>
-                                                    <span className="text-sm font-medium truncate flex-1 text-gray-700">{file.name}</span>
-                                                    <Download className="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                </a>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {isLecturer && gradingStudentId && (
+                                
+                                {/* FIX: Ensure we're finding the RIGHT submission for the current student being graded */}
+                                {isLecturer && gradingStudentId ? (
                                     <div className="pt-2">
                                         <h3 className="font-bold text-lg mb-4 flex items-center gap-2 text-gray-800"><User className="h-5 w-5"/> Student Submission</h3>
-                                        {allSubmissions.find(s => s.student_id === gradingStudentId)?.files?.length > 0 ? (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                {allSubmissions.find(s => s.student_id === gradingStudentId).files.map((f: any, i: number) => (
-                                                    <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center p-4 bg-white border-2 border-blue-100 rounded-xl hover:border-blue-500 hover:shadow-md transition-all group">
-                                                        <div className="bg-blue-100 p-3 rounded-lg mr-3 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                                            <FileText className="h-6 w-6"/>
-                                                        </div>
-                                                        <div className="flex-1 overflow-hidden">
-                                                            <p className="font-medium text-blue-900 truncate">{f.name}</p>
-                                                            <p className="text-xs text-blue-400">Click to view</p>
-                                                        </div>
-                                                        <Download className="h-5 w-5 text-gray-300 group-hover:text-blue-500"/>
-                                                    </a>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-400 italic">
-                                                Student has not attached any files yet.
+                                        
+                                        {(() => {
+                                            const studentSub = allSubmissions.find(s => s.student_id === gradingStudentId);
+                                            
+                                            if (studentSub?.files?.length > 0) {
+                                                return (
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        {studentSub.files.map((f: any, i: number) => (
+                                                            <a key={i} href={f.path} target="_blank" rel="noreferrer" className="flex items-center p-4 bg-white border-2 border-blue-100 rounded-xl hover:border-blue-500 hover:shadow-md transition-all group">
+                                                                <div className="bg-blue-100 p-3 rounded-lg mr-3 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                                                                    <FileText className="h-6 w-6"/>
+                                                                </div>
+                                                                <div className="flex-1 overflow-hidden">
+                                                                    <p className="font-medium text-blue-900 truncate">{f.name}</p>
+                                                                    <p className="text-xs text-blue-400">Click to view</p>
+                                                                </div>
+                                                                <Download className="h-5 w-5 text-gray-300 group-hover:text-blue-500"/>
+                                                            </a>
+                                                        ))}
+                                                    </div>
+                                                );
+                                            } else {
+                                                return (
+                                                    <div className="text-center p-8 bg-gray-50 rounded-xl border border-dashed border-gray-300 text-gray-400 italic">
+                                                        Student has not attached any files yet.
+                                                    </div>
+                                                );
+                                            }
+                                        })()}
+                                    </div>
+                                ) : (
+                                    /* Normal Student View Logic */
+                                    <>
+                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id)?.grade != null && (
+                                            <div className="bg-green-50 border border-green-200 rounded-xl p-5 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <h4 className="font-bold text-green-800 text-sm uppercase tracking-wider flex items-center gap-2">
+                                                        <GraduationCap className="h-4 w-4"/> Graded & Returned
+                                                    </h4>
+                                                    <Badge variant="secondary" className="bg-white text-green-700 border-green-200">
+                                                        {new Date(mySubmissions.find(s => s.assignment_id === selectedAssignment.id).submitted_at).toLocaleDateString()}
+                                                    </Badge>
+                                                </div>
+                                                <div className="text-4xl font-bold text-gray-900 mb-4">
+                                                    {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).grade} 
+                                                    <span className="text-lg font-medium text-gray-400"> / {selectedAssignment.points}</span>
+                                                </div>
+                                                {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback && (
+                                                    <div className="bg-white p-4 rounded-lg border border-green-100 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed shadow-sm">
+                                                        <span className="font-bold text-gray-900 block mb-2">Lecturer Feedback:</span>
+                                                        {mySubmissions.find(s => s.assignment_id === selectedAssignment.id).feedback}
+                                                    </div>
+                                                )}
                                             </div>
                                         )}
-                                    </div>
+
+                                        <div className="bg-gray-50 p-6 rounded-xl border border-gray-100">
+                                            <h4 className="font-bold text-gray-900 text-lg mb-4 flex items-center gap-2">
+                                                <FileText className="h-5 w-5 text-gray-500"/> Instructions
+                                            </h4>
+                                            <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{selectedAssignment.description || "No instructions provided."}</p>
+                                            
+                                            {selectedAssignment.attachments?.length > 0 && (
+                                                <div className="mt-6 grid gap-2">
+                                                    {selectedAssignment.attachments.map((file: any, idx: number) => (
+                                                        <a key={idx} href={file.path} target="_blank" rel="noreferrer" className="flex items-center p-3 bg-white border rounded-lg hover:border-blue-300 transition-colors group shadow-sm">
+                                                            <div className="bg-blue-50 p-2 rounded mr-3 text-blue-600"><FileText className="h-4 w-4"/></div>
+                                                            <span className="text-sm font-medium truncate flex-1 text-gray-700">{file.name}</span>
+                                                            <Download className="h-4 w-4 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                                        </a>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         )}

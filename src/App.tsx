@@ -83,7 +83,7 @@ export default function App() {
         twoDaysLater.setDate(now.getDate() + 2);
 
         const { data: assignments } = await supabase
-          .from('course_assignments')
+          .from('assignments')
           .select('id')
           .in('course_id', courseIds)
           .gt('due_date', now.toISOString())         // Due in future
